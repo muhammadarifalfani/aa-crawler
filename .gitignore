@@ -1,10 +1,87 @@
-# Python-generated files
+# Python caches and compiled files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# uv local cache
+.uv-cache/
+
+# Packaging and build artifacts
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+.eggs/
+*.egg
 
-# Virtual environments
-.venv
+# Ruff, mypy, pytest, and test caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+*.py,cover
+
+# Environment and secret files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+*.log
+/logs/**
+!/logs/.gitkeep
+
+# Runtime crawler data
+/data/raw/**
+!/data/raw/.gitkeep
+/data/processed/**
+!/data/processed/.gitkeep
+/data/failed/**
+!/data/failed/.gitkeep
+
+# IDE and editor files
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# OS-generated files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary and backup files
+.cache/
+.tmp/
+temp/
+tmp/
+*.tmp
+*.temp
+*.bak
+*.orig
+*~
+
+# uv.lock is intentionally not ignored.
