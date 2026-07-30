@@ -79,7 +79,7 @@ aa_crawler/
 ### Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/muhammadarifalfani/aa-crawler.git
 cd aa_crawler
 ```
 
