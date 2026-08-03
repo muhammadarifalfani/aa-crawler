@@ -8,6 +8,7 @@ from aa_crawler.configuration.errors import (
     LoggingSetupError,
     MissingSettingError,
 )
+from aa_crawler.configuration.loader import load_settings
 from aa_crawler.configuration.models import (
     ApplicationSettings,
     Environment,
@@ -30,4 +31,5 @@ __all__ = [
     "LogLevel",
     "MissingSettingError",
     "PathSettings",
+    "load_settings",
 ]
