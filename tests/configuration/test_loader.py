@@ -36,10 +36,11 @@ def test_load_settings_uses_defaults_and_explicit_base_dir(tmp_path: Path) -> No
 
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.debug is False
-    assert settings.paths.base_dir == base_dir
-    assert settings.paths.data_dir == Path("data")
-    assert settings.paths.log_dir == Path("logs")
-    assert settings.paths.config_dir == Path("config")
+    assert settings.paths.base_dir == base_dir.absolute()
+    assert settings.paths.data_dir == base_dir / "data"
+    assert settings.paths.log_dir == base_dir / "logs"
+    assert settings.paths.config_dir == base_dir / "config"
+    assert settings.paths.temp_dir == base_dir / ".tmp"
     assert settings.logging.level is LogLevel.INFO
     assert settings.logging.console_enabled is True
     assert settings.logging.file_enabled is False
@@ -66,7 +67,7 @@ def test_explicit_env_file_is_loaded_without_mutating_environment(
 
     assert settings.environment is Environment.STAGING
     assert settings.debug is True
-    assert settings.paths.data_dir == Path("dotenv-data")
+    assert settings.paths.data_dir == tmp_path / "dotenv-data"
     assert "AA_ENV" not in os.environ
     assert "AA_DEBUG" not in os.environ
     assert "AA_DATA_DIR" not in os.environ
@@ -154,10 +155,10 @@ def test_environment_values_map_to_nested_models(
 
     assert settings.environment is Environment.PRODUCTION
     assert settings.debug is True
-    assert settings.paths.data_dir == Path("runtime-data")
-    assert settings.paths.log_dir == Path("runtime-logs")
-    assert settings.paths.config_dir == Path("runtime-config")
-    assert settings.paths.temp_dir == Path("runtime-temp")
+    assert settings.paths.data_dir == tmp_path / "runtime-data"
+    assert settings.paths.log_dir == tmp_path / "runtime-logs"
+    assert settings.paths.config_dir == tmp_path / "runtime-config"
+    assert settings.paths.temp_dir == tmp_path / "runtime-temp"
     assert settings.logging.level is LogLevel.WARNING
     assert settings.logging.console_enabled is False
     assert settings.logging.file_enabled is True
@@ -242,3 +243,16 @@ def test_returned_settings_and_nested_models_remain_frozen(
         settings.paths.data_dir = Path("other-data")
     with pytest.raises(ValidationError, match="frozen"):
         settings.logging.level = LogLevel.DEBUG
+
+
+def test_load_settings_does_not_create_runtime_directories(tmp_path: Path) -> None:
+    base_dir = tmp_path / "missing-application"
+
+    settings = load_settings(base_dir=base_dir)
+
+    assert settings.paths.base_dir == base_dir
+    assert not base_dir.exists()
+    assert not settings.paths.data_dir.exists()
+    assert not settings.paths.log_dir.exists()
+    assert not settings.paths.config_dir.exists()
+    assert not settings.paths.temp_dir.exists()
