@@ -7,7 +7,9 @@ requires-python = ">=3.12"
 authors = [
     { name = "Muhammad Arif Alfani" },
 ]
-dependencies = []
+dependencies = [
+    "pydantic-settings>=2.14.2,<2.15",
+]
 
 [project.scripts]
 aa-crawler = "aa_crawler:main"
