@@ -8,10 +8,14 @@ from aa_crawler.configuration import (
     LoggingSetupError,
     LogLevel,
 )
+from aa_crawler.observability.context import get_correlation_id
+from aa_crawler.observability.redaction import SensitiveDataFilter
 
 _LOGGER_NAME = "aa_crawler"
 _HANDLER_OWNER_ATTRIBUTE = "_aa_crawler_owned"
-_TEXT_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+_TEXT_FORMAT = (
+    "%(asctime)s | %(levelname)s | %(name)s | %(correlation_id)s | %(message)s"
+)
 _DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 _LOG_LEVELS = {
     LogLevel.DEBUG: logging.DEBUG,
@@ -36,15 +40,36 @@ def _close_handlers(handlers: list[logging.Handler]) -> None:
         handler.close()
 
 
+class _CorrelationFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.correlation_id = get_correlation_id() or "-"
+        return True
+
+
+def _configure_handler(
+    handler: logging.Handler,
+    *,
+    level: int,
+    formatter: logging.Formatter,
+) -> logging.Handler:
+    handler.setLevel(level)
+    handler.setFormatter(formatter)
+    handler.addFilter(_CorrelationFilter())
+    handler.addFilter(SensitiveDataFilter())
+    return handler
+
+
 def _create_handlers(settings: ApplicationSettings) -> list[logging.Handler]:
     level = _LOG_LEVELS[settings.logging.level]
     formatter = logging.Formatter(_TEXT_FORMAT, datefmt=_DATE_FORMAT)
     handlers: list[logging.Handler] = []
 
     if settings.logging.console_enabled:
-        console_handler = _mark_owned(logging.StreamHandler())
-        console_handler.setLevel(level)
-        console_handler.setFormatter(formatter)
+        console_handler = _configure_handler(
+            _mark_owned(logging.StreamHandler()),
+            level=level,
+            formatter=formatter,
+        )
         handlers.append(console_handler)
 
     if settings.logging.file_enabled:
@@ -65,8 +90,7 @@ def _create_handlers(settings: ApplicationSettings) -> list[logging.Handler]:
                 "logging.file",
                 f"could not initialize rotating file handler for '{log_path}'",
             ) from error
-        file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
+        _configure_handler(file_handler, level=level, formatter=formatter)
         handlers.append(file_handler)
 
     return handlers
