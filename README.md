@@ -6,7 +6,7 @@ A multi-platform media monitoring and crawling framework for collecting, process
 
 AA Crawler provides a unified foundation for building reliable, extensible crawlers across multiple media platforms. The framework is structured for long-term maintainability — with clear separation of configuration, source code, documentation, operational scripts, and data pipelines.
 
-**Current status:** Sprint 2 — Configuration & Environment. Sprint 1 is complete, and configuration and logging foundation work is in progress; crawler functionality has not been implemented yet.
+**Current status:** Sprint 2 — Configuration and Observability Foundation is complete. Sprint 3 remains planned; crawler functionality has not been implemented yet.
 
 ## Vision
 
@@ -55,7 +55,7 @@ Build a scalable and extensible media monitoring platform capable of collecting,
 
 ```
 aa_crawler/
-├── config/              # Application and environment configuration
+├── config/              # Optional static configuration files; no secrets
 ├── data/
 │   ├── raw/             # Unprocessed crawled data
 │   ├── processed/       # Cleaned and transformed outputs
@@ -91,12 +91,72 @@ uv sync
 
 This creates a virtual environment and installs project dependencies as defined in `pyproject.toml`.
 
+## Sprint 2 application bootstrap
+
+Application startup is explicit and uses the public bootstrap API:
+
+```python
+from pathlib import Path
+
+from aa_crawler import bootstrap_application
+
+settings = bootstrap_application(
+    base_dir=Path("."),
+    env_file=None,
+    overrides={"logging": {"level": "INFO"}},
+)
+```
+
+`env_file` is optional and is never discovered automatically. Configuration
+sources have the following precedence, from highest to lowest:
+
+1. Explicit overrides
+2. OS environment variables
+3. An explicitly supplied `.env` file
+4. Model defaults
+
+Bootstrap resolves runtime paths, prepares the required runtime directories,
+and configures logging. None of these operations happen when the package is
+imported.
+
+### Supported environment variables
+
+AA Crawler recognizes only the following application variables:
+
+| Area | Variables |
+|---|---|
+| Core | `AA_ENV`, `AA_DEBUG`, `AA_DATA_DIR`, `AA_LOG_DIR`, `AA_CONFIG_DIR`, `AA_TEMP_DIR` |
+| Logging | `AA_LOG_LEVEL`, `AA_LOG_CONSOLE_ENABLED`, `AA_LOG_FILE_ENABLED`, `AA_LOG_FORMAT`, `AA_LOG_FILE_NAME`, `AA_LOG_MAX_BYTES`, `AA_LOG_BACKUP_COUNT` |
+
+Application variables must use the `AA_` prefix. Unknown `AA_` variables are
+rejected, while unrelated non-`AA_` variables are ignored. `AA_HTTP_PROXY` and
+`AA_HTTPS_PROXY` are reserved for future use and are not active. Never commit
+secrets or a local `.env` file.
+
+### Runtime paths
+
+- `base_dir` is supplied explicitly.
+- Relative runtime paths are anchored below `base_dir`; traversal outside it is rejected.
+- Absolute paths remain absolute.
+- Bootstrap prepares `data_dir` and `temp_dir` idempotently.
+- `log_dir` is prepared only when file logging is enabled.
+- `config_dir` is never created automatically.
+
+### Logging and observability
+
+The `aa_crawler` logger hierarchy writes text logs to stderr by default at
+`INFO`. Optional UTF-8 file logging uses `aa-crawler.log`, rotates at 10 MiB,
+and retains five backups; file logging is disabled by default. Missing
+correlation context is rendered as `-`, and recognized sensitive values are
+replaced with `[REDACTED]`. JSON logging and comprehensive PII detection are not
+implemented. Logging is configured during bootstrap, never at import time.
+
 ## Roadmap
 
 | Sprint | Focus | Status |
 |--------|-------|--------|
 | **Sprint 1** | Project Foundation — repository layout, documentation structure, tooling setup | **Completed** |
-| **Sprint 2** | Configuration & Environment — settings management, environment variables, logging setup | **In progress** |
+| **Sprint 2** | Configuration & Observability — configuration management, environment variables, runtime paths, logging, observability, application bootstrap | **Completed** |
 | **Sprint 3** | Core Crawler Framework — base abstractions, crawler interface, plugin architecture | Planned |
 | **Sprint 4** | Request Engine — HTTP client layer, rate limiting, retry logic, anti-bot handling | Planned |
 | **Sprint 5** | Social Platform Crawlers — Instagram, Facebook, Threads | Planned |
