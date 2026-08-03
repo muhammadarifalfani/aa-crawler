@@ -17,6 +17,10 @@ from aa_crawler.configuration.models import (
     LogLevel,
     PathSettings,
 )
+from aa_crawler.configuration.paths import (
+    prepare_runtime_directories,
+    resolve_runtime_paths,
+)
 
 __all__ = [
     "AACrawlerError",
@@ -32,4 +36,6 @@ __all__ = [
     "MissingSettingError",
     "PathSettings",
     "load_settings",
+    "prepare_runtime_directories",
+    "resolve_runtime_paths",
 ]

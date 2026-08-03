@@ -1,12 +1,11 @@
 """Typed configuration loading with explicit source precedence."""
 
 import os
-import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import cast
 
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aa_crawler.configuration.errors import (
@@ -21,6 +20,7 @@ from aa_crawler.configuration.models import (
     LogLevel,
     PathSettings,
 )
+from aa_crawler.configuration.paths import resolve_runtime_paths
 
 _APPROVED_ENVIRONMENT_VARIABLES = frozenset(
     {
@@ -71,10 +71,6 @@ _FIELD_TO_ENVIRONMENT_VARIABLE = {
 }
 
 
-def _default_temp_dir() -> Path:
-    return Path(tempfile.gettempdir()) / "aa-crawler"
-
-
 class _LoaderSettings(BaseSettings):
     model_config = SettingsConfigDict(
         case_sensitive=False,
@@ -88,7 +84,7 @@ class _LoaderSettings(BaseSettings):
     data_dir: Path = Path("data")
     log_dir: Path = Path("logs")
     config_dir: Path = Path("config")
-    temp_dir: Path = Field(default_factory=_default_temp_dir)
+    temp_dir: Path = Path(".tmp")
     log_level: LogLevel = LogLevel.INFO
     log_console_enabled: bool = True
     log_file_enabled: bool = False
@@ -239,7 +235,7 @@ def load_settings(
 
     try:
         loaded = _load_internal_settings(env_file, flattened_overrides)
-        return ApplicationSettings(
+        settings = ApplicationSettings(
             environment=loaded.env,
             debug=loaded.debug,
             paths=PathSettings(
@@ -259,6 +255,7 @@ def load_settings(
                 backup_count=loaded.log_backup_count,
             ),
         )
+        return resolve_runtime_paths(settings)
     except ValidationError as error:
         _translate_validation_error(error)
 
