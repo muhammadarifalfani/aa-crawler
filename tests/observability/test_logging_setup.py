@@ -14,7 +14,7 @@ from aa_crawler.configuration import (
     LogLevel,
     PathSettings,
 )
-from aa_crawler.observability import configure_logging
+from aa_crawler.observability import configure_logging, correlation_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -99,7 +99,7 @@ def test_console_handler_uses_configured_level(
     child_logger.info("hidden")
     child_logger.warning("visible")
 
-    assert capsys.readouterr().err.endswith("WARNING | aa_crawler.test | visible\n")
+    assert capsys.readouterr().err.endswith("WARNING | aa_crawler.test | - | visible\n")
     assert owned_handlers()[0].level == logging.WARNING
 
 
@@ -138,7 +138,7 @@ def test_rotating_file_handler_configuration_and_output(tmp_path: Path) -> None:
     file_handler.flush()
 
     output = (log_dir / "aa-crawler.log").read_text(encoding="utf-8")
-    assert "INFO | aa_crawler.test | file message" in output
+    assert "INFO | aa_crawler.test | - | file message" in output
 
 
 def test_file_handler_failure_is_translated_without_partial_setup(
@@ -222,3 +222,64 @@ def test_child_logger_uses_parent_without_reaching_root(
     finally:
         root_logger.removeHandler(root_handler)
         root_handler.close()
+
+
+def test_logs_use_placeholder_without_correlation_context(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging(make_settings(tmp_path=tmp_path))
+
+    logging.getLogger("aa_crawler.test").info("context-free")
+
+    assert "aa_crawler.test | - | context-free" in capsys.readouterr().err
+
+
+def test_child_logs_include_context_and_redact_console_secrets(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging(make_settings(tmp_path=tmp_path))
+
+    with correlation_context("request-42"):
+        logging.getLogger("aa_crawler.collectors").info(
+            "Authorization: Bearer console-secret"
+        )
+
+    output = capsys.readouterr().err
+    assert "aa_crawler.collectors | request-42 |" in output
+    assert "[REDACTED]" in output
+    assert "console-secret" not in output
+
+
+def test_file_logs_include_context_and_redact_secrets(tmp_path: Path) -> None:
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    configure_logging(
+        make_settings(
+            tmp_path=tmp_path,
+            console_enabled=False,
+            file_enabled=True,
+        )
+    )
+
+    with correlation_context("job-7"):
+        logging.getLogger("aa_crawler.test").info("password=file-secret")
+
+    output = (log_dir / "aa-crawler.log").read_text(encoding="utf-8")
+    assert "aa_crawler.test | job-7 |" in output
+    assert "[REDACTED]" in output
+    assert "file-secret" not in output
+
+
+def test_owned_handlers_receive_each_filter_once_after_reconfiguration(
+    tmp_path: Path,
+) -> None:
+    settings = make_settings(tmp_path=tmp_path)
+
+    configure_logging(settings)
+    configure_logging(settings)
+
+    filters = owned_handlers()[0].filters
+    assert len(filters) == 2
+    assert len({type(handler_filter) for handler_filter in filters}) == 2
