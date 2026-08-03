@@ -41,7 +41,7 @@ Do not use `pip`, Poetry, or Pipenv directly for project dependency management.
 
 ## Branching
 
-Do not work directly on `main`. Create a focused branch from the latest approved `main` branch.
+Do not work directly on `main`. Keep `main` protected and update it through reviewed pull requests. Create a focused task branch from the latest approved `main` branch.
 
 Suggested branch patterns:
 
@@ -87,6 +87,13 @@ In particular:
 
 Automated tools complement the Engineering Standards; they do not replace review and engineering judgment.
 
+Runtime configuration must be initialized explicitly at the application
+composition root. Do not load settings, create runtime directories, configure
+logging, or mutate environment state at import time. Tests that change
+environment variables, logging state, correlation context, or runtime paths
+must isolate and restore those changes with fixtures such as `monkeypatch` and
+`tmp_path`.
+
 ## Quality checks
 
 Run the applicable quality commands below before requesting review.
@@ -98,8 +105,8 @@ uv run ruff check .
 # Verify formatting
 uv run ruff format --check .
 
-# Type-check application code
-uv run mypy src/
+# Type-check the configured project scope
+uv run mypy
 
 # Run tests
 uv run pytest
@@ -109,6 +116,12 @@ uv run pytest --cov=aa_crawler
 ```
 
 Run every check applicable to the change and report the commands that completed successfully.
+
+Run the repository hook suite before committing or requesting review:
+
+```bash
+uv run pre-commit run --all-files
+```
 
 Do not use automatic fixes or repository-wide formatting unless the task explicitly authorizes them.
 

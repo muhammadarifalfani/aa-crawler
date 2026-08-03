@@ -3,11 +3,11 @@
 | Field            | Value                                      |
 |------------------|--------------------------------------------|
 | **Project**      | AA Crawler                                 |
-| **Sprint**       | Sprint 1 — Project Foundation              |
-| **Task**         | Task 2 — Engineering Standards & Development Tooling |
+| **Sprint**       | Living standard — aligned through Sprint 2 |
+| **Task**         | Engineering Standards & Development Tooling |
 | **Status**       | Approved                                   |
 | **Author**       | Engineering Team                           |
-| **Last Updated** | 2026-07-30                                 |
+| **Last Updated** | 2026-08-03                                 |
 
 ---
 
@@ -112,6 +112,7 @@ Source code under `src/aa_crawler/` will grow by domain as sprints progress. Top
 ```
 src/aa_crawler/
 ├── __init__.py
+├── bootstrap.py       # Explicit application composition root (Sprint 2)
 ├── collectors/        # Platform-specific crawlers (Sprint 5–7)
 ├── pipeline/          # Data processing pipeline (Sprint 8)
 ├── scheduler/         # Job scheduling (Sprint 9)
@@ -342,6 +343,10 @@ Configuration sources use this precedence, from highest to lowest:
 
 `.env` loading must be explicit. The application must not search parent directories automatically, OS environment variables must override `.env`, and production must not load `.env` automatically.
 
+Unknown variables using the `AA_` namespace are rejected to catch deployment
+mistakes. Environment variables outside the `AA_` namespace are ignored by the
+application settings loader.
+
 ### 9.2 Environment Variable Naming
 
 All application environment variables use the `AA_` prefix:
@@ -354,7 +359,7 @@ All application environment variables use the `AA_` prefix:
 | `AA_LOG_DIR` | Log output directory | `logs/` |
 | `AA_DATA_DIR` | Base data directory | `data/` |
 | `AA_CONFIG_DIR` | Static configuration directory | `config/` |
-| `AA_TEMP_DIR` | Temporary working directory | Platform temporary directory under `aa-crawler` |
+| `AA_TEMP_DIR` | Temporary working directory | `.tmp/` |
 | `AA_LOG_CONSOLE_ENABLED` | Enable stderr logging | `true` |
 | `AA_LOG_FILE_ENABLED` | Enable rotating file logging | `false` |
 | `AA_LOG_FORMAT` | Logging output format | `text` |
@@ -362,11 +367,30 @@ All application environment variables use the `AA_` prefix:
 | `AA_LOG_MAX_BYTES` | File rotation threshold | `10485760` (10 MiB) |
 | `AA_LOG_BACKUP_COUNT` | Rotated backup count | `5` |
 
-Platform-specific credentials (added in later sprints) follow the same prefix: `AA_INSTAGRAM_TOKEN`, `AA_YOUTUBE_API_KEY`, etc.
-
 Future application proxy settings use `AA_HTTP_PROXY` and `AA_HTTPS_PROXY`. Unprefixed `HTTP_PROXY` and `HTTPS_PROXY` are not AA Crawler settings; HTTP clients receive validated proxy settings explicitly.
 
-### 9.3 Environment Separation
+### 9.3 Runtime Paths and Bootstrap
+
+`bootstrap_application()` is the explicit application composition root. Its
+startup order is:
+
+```text
+load_settings
+→ prepare_runtime_directories
+→ configure_logging
+```
+
+`base_dir` is supplied explicitly. Relative runtime paths are normalized and
+must remain below `base_dir`; absolute paths remain absolute. Path resolution
+does not require paths to exist and performs no filesystem writes.
+
+Directory preparation is a separate, idempotent startup operation. It always
+prepares `data_dir` and `temp_dir`, prepares `log_dir` only when file logging is
+enabled, and never creates `config_dir`. The same frozen settings instance is
+passed through directory preparation and logging configuration. Imports must
+not load settings, create directories, configure logging, or cache settings.
+
+### 9.4 Environment Separation
 
 | Environment | Config Source | Data | Logging |
 |-------------|--------------|------|---------|
@@ -375,7 +399,7 @@ Future application proxy settings use `AA_HTTP_PROXY` and `AA_HTTPS_PROXY`. Unpr
 | Staging | OS environment variables | Isolated storage | Console to stderr; file explicitly enabled when required |
 | Production | Secrets manager / env vars | Managed storage | `WARNING`+ to centralized log |
 
-### 9.4 Secrets Policy
+### 9.5 Secrets Policy
 
 - `.env` is listed in `.gitignore` and must never be committed.
 - `.env.example` documents approved variables with safe development values and no secrets.
@@ -403,16 +427,16 @@ The default level is `INFO`. `AA_LOG_LEVEL` controls the effective level indepen
 
 ### 10.3 Log Format
 
-Sprint 2 uses a consistent text format:
+The implemented text format is:
 
 ```
-%(asctime)s | %(levelname)-8s | %(name)s | %(message)s
+%(asctime)s | %(levelname)s | %(name)s | %(correlation_id)s | %(message)s
 ```
 
 Example:
 
 ```
-2026-07-30 14:22:01,483 | INFO     | aa_crawler.collectors.instagram | Fetched 50 posts for query "brand-x"
+2026-08-03T14:22:01+0700 | INFO | aa_crawler.collectors.instagram | job-42 | Fetched 50 posts
 ```
 
 Structured JSON logging is deferred until the Dashboard API and centralized monitoring are implemented (Sprint 9+).
@@ -427,6 +451,11 @@ Structured JSON logging is deferred until the Dashboard API and centralized moni
 Log files are git-ignored. The `logs/` directory is tracked via `.gitkeep`.
 Failure to initialize explicitly enabled file logging is fatal.
 
+Handlers are attached only to the `aa_crawler` logger hierarchy. Console logs
+use stderr. AA Crawler-owned handlers are replaced safely during
+reconfiguration without removing unrelated handlers or propagating records to
+the root logger.
+
 ### 10.5 Logging Rules
 
 - Use the module-level logger: `logger = logging.getLogger(__name__)`.
@@ -434,6 +463,12 @@ Failure to initialize explicitly enabled file logging is fatal.
 - Include contextual information in log messages: platform, query ID, batch size, duration.
 - Do not log secrets, tokens, or full API responses containing PII.
 - Exceptions must be logged with `logger.exception()` or `exc_info=True`.
+- Correlation IDs use `ContextVar` so concurrent and asynchronous contexts do
+  not leak state. When no ID exists, logs use `-`; IDs are never generated
+  automatically.
+- Recognized secret-bearing key/value pairs are replaced deterministically with
+  `[REDACTED]` before owned handlers emit them. This is defensive secret
+  filtering, not arbitrary PII detection.
 
 ### 10.6 Logger Hierarchy
 
@@ -479,7 +514,9 @@ Test files mirror the `src/aa_crawler/` module structure.
 | Integration | Module interaction | Mocked or local | Medium | Pipeline, storage boundaries |
 | End-to-end | Full crawl → process flow | Live (staging) | Slow | Sprint 9+ |
 
-During Sprint 1, only tooling verification tests are required (e.g., confirming `ruff`, `pytest`, and imports work).
+Foundation tests cover configuration, paths, logging, context, redaction, and
+bootstrap integration. Tests must isolate environment variables, logging and
+correlation state, and filesystem writes; use `tmp_path` for runtime paths.
 
 ### 11.4 Coverage Targets
 
@@ -532,7 +569,7 @@ Ruff is the primary tool to minimize toolchain complexity.
 
 ### 12.3 Pre-Commit Hooks
 
-A `.pre-commit-config.yaml` will enforce checks before every commit:
+`.pre-commit-config.yaml` enforces checks before every commit:
 
 | Hook | Action |
 |------|--------|
@@ -542,7 +579,7 @@ A `.pre-commit-config.yaml` will enforce checks before every commit:
 | Trailing whitespace | Remove |
 | End-of-file fixer | Ensure newline at EOF |
 | YAML / TOML validation | Syntax check |
-| No committed secrets | Detect `.env`, credentials patterns |
+| Repository hygiene | Detect merge markers, malformed configuration, trailing whitespace, and oversized files |
 
 Install hooks:
 
@@ -614,7 +651,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 
 | Planned Component | Standards Support |
 |-------------------|-------------------|
-| **Query Management** | Typed interfaces, validated config via Pydantic (Sprint 2+) |
+| **Query Management** | Typed interfaces and validated configuration foundation |
 | **Query Engine** | Composable query builder; typed query models; unit-tested parsing and validation |
 | **Collector Engine** | Plugin architecture with base class; per-platform modules under `collectors/` |
 | **Scheduler** | Logging of job lifecycle events; testable with mocked clock |
@@ -628,7 +665,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 
 | Sprint | Tooling Addition |
 |--------|-----------------|
-| Sprint 2 | Logging configuration module, Pydantic settings |
+| Sprint 2 | Completed configuration, runtime-path, observability, and bootstrap foundation |
 | Sprint 3 | Plugin discovery conventions, base test fixtures for collectors |
 | Sprint 4 | HTTP mock library (`respx` / `pytest-httpx`), retry test utilities |
 | Sprint 8 | Data validation schemas, pipeline test fixtures |
@@ -680,5 +717,6 @@ uv lock                       # Update lockfile
 |----------|----------|
 | Project README | `README.md` |
 | Sprint 1 Notes | `docs/sprint/sprint-1.md` |
+| Sprint 2 Notes | `docs/sprint/sprint-2.md` |
 | Architecture Decision Records | `docs/adr/` |
 | Sprint Roadmap | `README.md` § Roadmap |
