@@ -119,11 +119,11 @@ src/aa_crawler/
 ├── query/             # Query management (Sprint 3+)
 ├── api/               # Dashboard API (future sprint)
 ├── insights/          # AI Insight Engine (future sprint)
-├── config/            # Settings and environment loading (Sprint 2)
-└── logging/           # Logging setup and utilities (Sprint 2)
+├── configuration/     # Settings and environment loading (Sprint 2)
+└── observability/     # Logging, context, and redaction utilities (Sprint 2)
 ```
 
-New modules must not be created until their sprint task authorizes them. During Sprint 1, only tooling-related changes are permitted.
+New modules must not be created until their sprint task authorizes them.
 
 ### 4.4 Documentation Standards
 
@@ -328,8 +328,19 @@ Dev dependencies must never be imported in runtime code under `src/`.
 |------|------------|
 | Virtual environment | Managed by `uv` at `.venv/` (git-ignored) |
 | Python version | Pinned in `.python-version` (currently `3.12`) |
-| Environment variables | Loaded from `.env` (local only, git-ignored) |
-| Environment template | `.env.example` committed with all required keys, no values |
+| Environment variables | OS environment first; optional explicit `.env` for local use |
+| Environment template | `.env.example` committed with safe development values and no secrets |
+
+Configuration is loaded once at the application composition root into one frozen settings instance. Components receive that instance or narrower subsystem settings through dependency injection; modules must not create a global settings singleton or read environment variables independently.
+
+Configuration sources use this precedence, from highest to lowest:
+
+1. Explicit constructor or test overrides.
+2. OS environment variables.
+3. An explicitly selected `.env` file.
+4. Model defaults.
+
+`.env` loading must be explicit. The application must not search parent directories automatically, OS environment variables must override `.env`, and production must not load `.env` automatically.
 
 ### 9.2 Environment Variable Naming
 
@@ -337,25 +348,37 @@ All application environment variables use the `AA_` prefix:
 
 | Variable | Purpose | Example Value |
 |----------|---------|---------------|
-| `AA_ENV` | Environment name | `development`, `staging`, `production` |
-| `AA_LOG_LEVEL` | Logging verbosity | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `AA_ENV` | Environment name | `development`, `testing`, `staging`, `production` |
+| `AA_DEBUG` | Application diagnostics | `false` |
+| `AA_LOG_LEVEL` | Logging verbosity | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `AA_LOG_DIR` | Log output directory | `logs/` |
 | `AA_DATA_DIR` | Base data directory | `data/` |
+| `AA_CONFIG_DIR` | Static configuration directory | `config/` |
+| `AA_TEMP_DIR` | Temporary working directory | Platform temporary directory under `aa-crawler` |
+| `AA_LOG_CONSOLE_ENABLED` | Enable stderr logging | `true` |
+| `AA_LOG_FILE_ENABLED` | Enable rotating file logging | `false` |
+| `AA_LOG_FORMAT` | Logging output format | `text` |
+| `AA_LOG_FILE_NAME` | Rotating log filename | `aa-crawler.log` |
+| `AA_LOG_MAX_BYTES` | File rotation threshold | `10485760` (10 MiB) |
+| `AA_LOG_BACKUP_COUNT` | Rotated backup count | `5` |
 
 Platform-specific credentials (added in later sprints) follow the same prefix: `AA_INSTAGRAM_TOKEN`, `AA_YOUTUBE_API_KEY`, etc.
+
+Future application proxy settings use `AA_HTTP_PROXY` and `AA_HTTPS_PROXY`. Unprefixed `HTTP_PROXY` and `HTTPS_PROXY` are not AA Crawler settings; HTTP clients receive validated proxy settings explicitly.
 
 ### 9.3 Environment Separation
 
 | Environment | Config Source | Data | Logging |
 |-------------|--------------|------|---------|
-| Development | `.env` + defaults | Local `data/` dirs | `DEBUG` to console + file |
-| Staging | Environment variables / config files | Isolated storage | `INFO` to file |
+| Development | Explicit `.env`, OS environment, and defaults | Local `data/` dirs | Console to stderr; file disabled by default |
+| Testing | Explicit overrides, isolated `.env`, or OS environment | Temporary isolated dirs | Console to stderr; file disabled by default |
+| Staging | OS environment variables | Isolated storage | Console to stderr; file explicitly enabled when required |
 | Production | Secrets manager / env vars | Managed storage | `WARNING`+ to centralized log |
 
 ### 9.4 Secrets Policy
 
 - `.env` is listed in `.gitignore` and must never be committed.
-- `.env.example` documents every required variable with placeholder values.
+- `.env.example` documents approved variables with safe development values and no secrets.
 - Production secrets are injected at runtime — never baked into images or config files.
 
 ---
@@ -376,11 +399,11 @@ AA Crawler is a long-running, multi-platform system. Logging must support debugg
 | `ERROR` | Failures requiring attention (crawl failed, pipeline exception, storage unreachable) |
 | `CRITICAL` | System-level failures (configuration invalid, cannot start) |
 
-Default level by environment: `DEBUG` (dev), `INFO` (staging), `WARNING` (production).
+The default level is `INFO`. `AA_LOG_LEVEL` controls the effective level independently of `AA_DEBUG`.
 
 ### 10.3 Log Format
 
-Structured logging is the target format for production. During Sprint 1–2, establish a consistent text format:
+Sprint 2 uses a consistent text format:
 
 ```
 %(asctime)s | %(levelname)-8s | %(name)s | %(message)s
@@ -392,16 +415,17 @@ Example:
 2026-07-30 14:22:01,483 | INFO     | aa_crawler.collectors.instagram | Fetched 50 posts for query "brand-x"
 ```
 
-Structured JSON logging will be adopted when the Dashboard API and centralized monitoring are implemented (Sprint 9+).
+Structured JSON logging is deferred until the Dashboard API and centralized monitoring are implemented (Sprint 9+).
 
 ### 10.4 Log Output
 
 | Output | Location | Rotation |
 |--------|----------|----------|
-| Console (stderr) | Development only | N/A |
-| File | `logs/` directory | Size-based rotation (10 MB, 5 backups) |
+| Console (stderr) | Enabled by default in every environment | N/A |
+| File | Disabled by default; `logs/` when explicitly enabled | Size-based rotation (10 MiB, 5 backups) |
 
 Log files are git-ignored. The `logs/` directory is tracked via `.gitkeep`.
+Failure to initialize explicitly enabled file logging is fatal.
 
 ### 10.5 Logging Rules
 
@@ -496,7 +520,7 @@ uv run pytest -v --cov=aa_crawler  # With coverage report
 
 Ruff is the primary tool to minimize toolchain complexity.
 
-### 12.2 Ruff Configuration (Planned)
+### 12.2 Ruff Configuration
 
 | Setting | Value | Rationale |
 |---------|-------|-----------|
