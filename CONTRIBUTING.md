@@ -1,6 +1,6 @@
 # Contributing to AA Crawler
 
-This guide describes the current contribution workflow for AA Crawler. The project is still establishing its development tooling, so commands marked **planned** may change until the corresponding `pyproject.toml` configuration is approved.
+This guide describes the current contribution workflow for AA Crawler. The development tooling is configured in `pyproject.toml` and installed through the locked `uv` environment.
 
 ## Prerequisites
 
@@ -29,13 +29,13 @@ git clone https://github.com/muhammadarifalfani/aa-crawler.git
 cd aa_crawler
 ```
 
-The intended environment setup command is:
+Create or synchronize the project environment with:
 
 ```bash
 uv sync
 ```
 
-`uv sync` is the intended setup command. Its exact behavior and installed development tools depend on the approved dependency configuration in `pyproject.toml`, which is still being implemented during Sprint 1.
+`uv sync` installs the project and its approved development tools from `pyproject.toml` and `uv.lock`.
 
 Do not use `pip`, Poetry, or Pipenv directly for project dependency management.
 
@@ -89,9 +89,7 @@ Automated tools complement the Engineering Standards; they do not replace review
 
 ## Quality checks
 
-The intended quality commands are listed below.
-
-> **Planned:** These commands depend on development dependencies and tool configuration that are still being implemented in `pyproject.toml`. Do not claim that a check passes until its tooling is available and the command has run successfully.
+Run the applicable quality commands below before requesting review.
 
 ```bash
 # Lint
@@ -110,7 +108,7 @@ uv run pytest
 uv run pytest --cov=aa_crawler
 ```
 
-Run every check applicable to the change. If a planned command is not yet available, state that clearly in the pull request instead of reporting it as passing.
+Run every check applicable to the change and report the commands that completed successfully.
 
 Do not use automatic fixes or repository-wide formatting unless the task explicitly authorizes them.
 
@@ -144,7 +142,7 @@ Before requesting review, confirm:
 - [ ] The diff has been self-reviewed.
 - [ ] Tests were added or updated when behavior changed.
 - [ ] Documentation was updated when behavior, configuration, or architecture changed.
-- [ ] Applicable Ruff, mypy, pytest, and coverage checks pass, or unavailable planned checks are clearly identified.
+- [ ] Applicable Ruff, mypy, pytest, and coverage checks pass.
 - [ ] No secrets, credentials, tokens, or local environment values are included.
 - [ ] No generated crawler data or runtime logs are included.
 - [ ] No unrelated files were reformatted or normalized.

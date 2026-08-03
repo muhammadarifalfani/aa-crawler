@@ -6,7 +6,7 @@ A multi-platform media monitoring and crawling framework for collecting, process
 
 AA Crawler provides a unified foundation for building reliable, extensible crawlers across multiple media platforms. The framework is structured for long-term maintainability — with clear separation of configuration, source code, documentation, operational scripts, and data pipelines.
 
-**Current status:** Sprint 1 — Project Foundation. Repository layout and tooling are in place; crawler functionality has not been implemented yet.
+**Current status:** Sprint 2 — Configuration & Environment. Sprint 1 is complete, and configuration and logging foundation work is in progress; crawler functionality has not been implemented yet.
 
 ## Vision
 
@@ -95,8 +95,8 @@ This creates a virtual environment and installs project dependencies as defined 
 
 | Sprint | Focus | Status |
 |--------|-------|--------|
-| **Sprint 1** | Project Foundation — repository layout, documentation structure, tooling setup | **In progress** |
-| **Sprint 2** | Configuration & Environment — settings management, environment variables, logging setup | Planned |
+| **Sprint 1** | Project Foundation — repository layout, documentation structure, tooling setup | **Completed** |
+| **Sprint 2** | Configuration & Environment — settings management, environment variables, logging setup | **In progress** |
 | **Sprint 3** | Core Crawler Framework — base abstractions, crawler interface, plugin architecture | Planned |
 | **Sprint 4** | Request Engine — HTTP client layer, rate limiting, retry logic, anti-bot handling | Planned |
 | **Sprint 5** | Social Platform Crawlers — Instagram, Facebook, Threads | Planned |
