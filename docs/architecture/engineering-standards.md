@@ -3,17 +3,20 @@
 | Field            | Value                                      |
 |------------------|--------------------------------------------|
 | **Project**      | AA Crawler                                 |
-| **Sprint**       | Living standard — aligned through Sprint 2 |
+| **Sprint**       | Living standard — aligned through Sprint 3 |
 | **Task**         | Engineering Standards & Development Tooling |
 | **Status**       | Approved                                   |
 | **Author**       | Engineering Team                           |
-| **Last Updated** | 2026-08-03                                 |
+| **Last Updated** | 2026-08-04                                 |
 
 ---
 
 ## 1. Objectives
 
-Establish a consistent, enforceable engineering baseline for AA Crawler before feature development begins. This task defines how the team writes, tests, formats, commits, and manages dependencies so that future sprints — crawlers, pipelines, storage, and APIs — can be built on a shared foundation.
+Maintain a consistent, enforceable engineering baseline for AA Crawler as the
+project evolves. This document defines how the team writes, tests, formats,
+commits, and manages dependencies so that crawlers, pipelines, storage, and
+APIs share one foundation.
 
 **Primary goals:**
 
@@ -45,11 +48,12 @@ Establish a consistent, enforceable engineering baseline for AA Crawler before f
 
 ### Out of Scope
 
-- Crawler or platform-specific implementation.
+- Platform-specific crawler implementation.
 - Database or search engine selection and setup (Sprint 2+).
 - CI/CD pipeline configuration (deferred to a later sprint).
 - Production deployment and infrastructure.
-- Implementation of planned components (Collector Engine, Scheduler, etc.).
+- Implementation of platform crawlers, scheduling, persistence, and other
+  future product components.
 
 ---
 
@@ -94,11 +98,11 @@ The existing layout established in Task 1.4 is the canonical structure. All new 
 | Element | Convention | Example |
 |---------|------------|---------|
 | Python package | `snake_case` | `aa_crawler` |
-| Python module | `snake_case` | `collector_engine.py` |
-| Python class | `PascalCase` | `CollectorEngine` |
+| Python module | `snake_case` | `html_crawler.py` |
+| Python class | `PascalCase` | `HtmlCrawler` |
 | Python function / variable | `snake_case` | `fetch_posts()` |
 | Python constant | `UPPER_SNAKE_CASE` | `MAX_RETRY_COUNT` |
-| Test file | `test_<module>.py` | `test_collector_engine.py` |
+| Test file | `test_<module>.py` | `test_html_crawler.py` |
 | Test function | `test_<behavior>()` | `test_fetch_posts_returns_list()` |
 | Config file | `snake_case` or `kebab-case` | `logging.yaml`, `dev-settings.toml` |
 | Environment variable | `UPPER_SNAKE_CASE` prefixed with `AA_` | `AA_LOG_LEVEL`, `AA_ENV` |
@@ -107,21 +111,19 @@ The existing layout established in Task 1.4 is the canonical structure. All new 
 
 ### 4.3 Module Organization
 
-Source code under `src/aa_crawler/` will grow by domain as sprints progress. Top-level modules should reflect planned components:
+Source code under `src/aa_crawler/` is organized by explicit responsibility:
 
 ```
 src/aa_crawler/
 ├── __init__.py
-├── bootstrap.py       # Explicit application composition root (Sprint 2)
-├── collectors/        # Platform-specific crawlers (Sprint 5–7)
-├── pipeline/          # Data processing pipeline (Sprint 8)
-├── scheduler/         # Job scheduling (Sprint 9)
-├── storage/           # Storage layer abstractions (Sprint 8+)
-├── query/             # Query management (Sprint 3+)
-├── api/               # Dashboard API (future sprint)
-├── insights/          # AI Insight Engine (future sprint)
-├── configuration/     # Settings and environment loading (Sprint 2)
-└── observability/     # Logging, context, and redaction utilities (Sprint 2)
+├── bootstrap.py       # Explicit application composition root
+├── configuration/     # Settings, loading, and runtime paths
+├── observability/     # Logging, context, and redaction
+├── crawler/           # Domain contracts and crawl lifecycle
+├── http/              # Synchronous transport and policies
+├── robots/            # robots.txt decisions
+├── html/              # HTML acquisition and validation
+└── parser/            # Lazy parser lifecycle and output validation
 ```
 
 New modules must not be created until their sprint task authorizes them.
@@ -141,15 +143,23 @@ The following principles guide all design and implementation decisions across AA
 
 ### Single Responsibility Principle
 
-Each module, class, and function should have one clearly defined responsibility. For example, a platform collector fetches data; a pipeline stage transforms it; a storage adapter persists it. Avoid combining unrelated concerns in a single unit.
+Each module, class, and function should have one clearly defined responsibility.
+For example, an HTTP client performs transport, an HTML fetcher validates and
+decodes content, a pipeline stage transforms data, and a storage adapter
+persists it. Avoid combining unrelated concerns in one unit.
 
 ### Open/Closed Principle
 
-Core abstractions (base collector, pipeline stage, storage adapter) must be open for extension but closed for modification. New platforms and data sources are added by implementing existing interfaces — not by altering shared base code.
+Core abstractions (`BaseCrawler`, `BaseParser`, pipeline stages, and storage
+adapters) must be open for extension but closed for incidental modification.
+New platforms and data sources compose approved interfaces instead of
+duplicating shared behavior.
 
 ### Composition over Inheritance
 
-Prefer composing behavior from small, focused components rather than building deep inheritance hierarchies. Use inheritance sparingly and only for true is-a relationships (e.g., `BaseCollector`).
+Prefer composing behavior from small, focused components rather than building
+deep inheritance hierarchies. Use inheritance sparingly and only for true
+is-a relationships such as `BaseCrawler`.
 
 ### Dependency Injection
 
@@ -159,9 +169,41 @@ Components receive their dependencies (HTTP clients, storage backends, configura
 
 All environment-specific values (URLs, timeouts, rate limits, credentials, log levels) must be externalized to configuration files or environment variables. No magic numbers or hardcoded endpoints in source code.
 
-### Plugin-based Architecture
+### Explicit composition and dependency ownership
 
-Platform collectors, pipeline stages, and storage backends are registered as plugins discovered at runtime. Adding a new data source (Instagram, TikTok, YouTube, etc.) requires implementing a plugin — not modifying the core engine.
+Runtime collaborators are supplied through constructor injection. Each
+boundary has one owner: `HttpClient` owns transport, `RobotsPolicy` owns robots
+decisions, `HtmlFetcher` owns HTML validation and decoding, `BaseParser` owns
+parser output validation, and `BaseCrawler` owns the crawl template lifecycle.
+Service locators and implicit global dependency construction are prohibited.
+
+### Synchronous crawler architecture
+
+- Crawler contracts are immutable and slotted, with defensive top-level copies
+  for mapping inputs.
+- HTTPX is isolated behind `HttpClient`; domain metadata must not configure
+  transport behavior.
+- `TimeoutPolicy` and `RetryPolicy` are explicit constructor dependencies.
+- `RobotsPolicy` is the only robots authority used by HTML acquisition.
+- `HtmlFetcher` performs deterministic content-type validation and strict
+  decoding.
+- `BaseParser` lazily yields and validates `CrawlerItem` values.
+- `BaseCrawler` owns ordered, lazy, fail-fast request processing.
+- The protected `_process_request` seam is the approved specialization point;
+  the default lifecycle remains unchanged.
+- `HtmlCrawler` composes `HtmlFetcher` and `BaseParser` and performs exactly one
+  page transport request per configured URL.
+
+Crawler package boundaries, contract fields, subclass seams, and Sprint 3
+public APIs remain partially provisional under
+[ADR-011](../adr/0011-sprint-4-api-and-package-policy.md). Mature Sprint 2
+configuration and primary observability APIs are frozen for Sprint 4.
+
+ADR-014 (user-agent ownership), ADR-015 (retry idempotency), ADR-016
+(logging-redaction scope), and ADR-019 (future execution families) are
+Proposed. They are not implemented policy. Async execution, browser
+automation, plugins, distributed crawling, metrics, and tracing remain future
+or conditional work.
 
 ---
 
@@ -300,7 +342,7 @@ Dependencies are organized in `pyproject.toml`:
 
 | Group | Purpose | Examples (planned) |
 |-------|---------|---------------------|
-| `dependencies` | Runtime packages | `httpx`, `pydantic`, `apscheduler` |
+| `dependencies` | Runtime packages | `httpx`, `pydantic-settings` |
 | `[dependency-groups] dev` | Development tooling | `ruff`, `pytest`, `mypy`, `pre-commit` |
 
 Dev dependencies must never be imported in runtime code under `src/`.
@@ -474,13 +516,13 @@ the root logger.
 
 ```
 aa_crawler                          # Root application logger
-├── aa_crawler.collectors            # Collector Engine
-│   ├── aa_crawler.collectors.instagram
-│   └── aa_crawler.collectors.youtube
-├── aa_crawler.pipeline             # Data Pipeline
-├── aa_crawler.scheduler            # Scheduler
-├── aa_crawler.storage              # Storage Layer
-└── aa_crawler.api                  # Dashboard API
+├── aa_crawler.configuration       # Settings and runtime paths
+├── aa_crawler.observability       # Logging context and redaction
+├── aa_crawler.crawler             # Contracts and crawl lifecycle
+├── aa_crawler.http                # Synchronous transport
+├── aa_crawler.robots              # robots.txt policy
+├── aa_crawler.html                # HTML acquisition
+└── aa_crawler.parser              # Parser framework
 ```
 
 ---
@@ -639,7 +681,7 @@ For **Sprint 1 Task 2** specifically, Done means: tooling is configured, this do
 | 6 | Logging volume from crawlers overwhelms disk | Operational issues in production | Medium | Define rotation policy early; plan centralized logging for Sprint 9 |
 | 7 | Secrets accidentally committed | Security breach | Low | Pre-commit secret detection hook; `.env` in `.gitignore`; PR review checklist |
 | 8 | Dependency bloat as platforms are added | Large attack surface, slow installs | Medium | Require dependency justification in PRs; periodic audit |
-| 9 | Anti-bot detection, rate limiting, CAPTCHA, and platform blocking | Crawlers fail silently or produce incomplete data; increased maintenance burden | High | Abstract request engine with retry/backoff; rotate user agents and proxies; monitor failure rates; design collectors for graceful degradation |
+| 9 | Anti-bot detection, rate limiting, CAPTCHA, and platform blocking | Crawlers fail or produce incomplete data; increased maintenance burden | High | Preserve transport and robots boundaries; resolve identity and proxy policy through ADR review before production crawling |
 
 ---
 
@@ -653,7 +695,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 |-------------------|-------------------|
 | **Query Management** | Typed interfaces and validated configuration foundation |
 | **Query Engine** | Composable query builder; typed query models; unit-tested parsing and validation |
-| **Collector Engine** | Plugin architecture with base class; per-platform modules under `collectors/` |
+| **Crawler framework** | Synchronous contracts and constructor-injected lifecycle boundaries |
 | **Scheduler** | Logging of job lifecycle events; testable with mocked clock |
 | **Data Pipeline** | Stage-level logging; unit + integration test categories |
 | **Storage Layer** | Abstract interface; integration tests against local/test storage |
@@ -666,8 +708,8 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint | Tooling Addition |
 |--------|-----------------|
 | Sprint 2 | Completed configuration, runtime-path, observability, and bootstrap foundation |
-| Sprint 3 | Plugin discovery conventions, base test fixtures for collectors |
-| Sprint 4 | HTTP mock library (`respx` / `pytest-httpx`), retry test utilities |
+| Sprint 3 | Completed synchronous crawler, HTTP, robots, HTML, parser, and composition foundation |
+| Sprint 4 | Planned production evolution subject to backlog and ADR approval |
 | Sprint 8 | Data validation schemas, pipeline test fixtures |
 | Sprint 9 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging |
 | Sprint 10 | Performance benchmarks, security scanning (`bandit`), dependency audit automation |
@@ -733,5 +775,6 @@ uv lock                       # Update lockfile
 | Project README | `README.md` |
 | Sprint 1 Notes | `docs/sprint/sprint-1.md` |
 | Sprint 2 Notes | `docs/sprint/sprint-2.md` |
+| Sprint 3 Notes | `docs/sprint/sprint-3.md` |
 | Architecture Decision Records | `docs/adr/` |
 | Sprint Roadmap | `README.md` § Roadmap |

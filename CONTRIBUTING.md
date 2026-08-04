@@ -47,7 +47,7 @@ Suggested branch patterns:
 
 | Change | Pattern | Example |
 |---|---|---|
-| Feature | `feat/<name>` | `feat/base-collector` |
+| Feature | `feat/<name>` | `feat/html-crawler` |
 | Bug fix | `fix/<name>` | `fix/empty-response` |
 | Tooling or maintenance | `chore/<name>` | `chore/sprint-1-tooling` |
 | Documentation | `docs/<name>` | `docs/contribution-guide` |
@@ -69,6 +69,10 @@ Use the following workflow for each task:
 8. Open a pull request for review.
 
 Do not combine unrelated cleanup, dependency updates, formatting, or refactoring with the requested change.
+
+Architecture changes require ADR review under the Engineering Standards.
+Public APIs and protected lifecycle seams are compatibility-sensitive; do not
+change them incidentally or bypass an accepted architectural boundary.
 
 ## Coding standards
 
@@ -117,6 +121,10 @@ uv run pytest --cov=aa_crawler
 
 Run every check applicable to the change and report the commands that completed successfully.
 
+Tests must not access the external network. Use injected clients, mock
+transports, and deterministic local fixtures. Documentation-only changes must
+still pass the repository pre-commit suite.
+
 Run the repository hook suite before committing or requesting review:
 
 ```bash
@@ -138,9 +146,9 @@ Examples:
 ```text
 chore(tooling): add repository editor configuration
 docs(contributing): add contributor workflow
-test(collector): add base collector contract tests
+test(crawler): add crawler contract tests
 fix(pipeline): handle empty input batch
-feat(collector): add base collector interface
+feat(crawler): add crawler lifecycle seam
 ```
 
 Keep the summary at 72 characters or fewer, omit the trailing period, and explain the reason for a non-obvious change in the commit body.
@@ -194,3 +202,12 @@ Follow the approved Engineering Standards policy:
 - Commit `uv.lock` starting in Sprint 1.
 - Commit and maintain `uv.lock` whenever approved dependencies change.
 - Do not update the lockfile as an unrelated side effect of another change.
+
+Dependency changes require review of both `pyproject.toml` and `uv.lock`.
+
+### Crawler architecture boundaries
+
+Platform-specific code must compose the approved crawler stack. It must not
+bypass `HttpClient`, `RobotsPolicy`, `HtmlFetcher`, `BaseParser`, or
+`BaseCrawler` to duplicate transport, robots, acquisition, parser validation,
+or crawl-lifecycle behavior.
