@@ -60,6 +60,27 @@ class ExampleCrawler(BaseCrawler):
         return self._parser(response)
 
 
+class SpecializedCrawler(BaseCrawler):
+    def __init__(
+        self,
+        *,
+        http_client: HttpClient,
+        requests: Iterable[CrawlerRequest],
+        item: CrawlerItem,
+    ) -> None:
+        super().__init__(http_client=http_client)
+        self._requests = requests
+        self._item = item
+        self.processed: list[CrawlerRequest] = []
+
+    def start_requests(self) -> Iterable[CrawlerRequest]:
+        return self._requests
+
+    def _process_request(self, request: CrawlerRequest) -> Iterable[CrawlerItem]:
+        self.processed.append(request)
+        return [self._item]
+
+
 def _crawler(
     *,
     client: HttpClient,
@@ -101,6 +122,39 @@ def test_one_request_produces_original_item() -> None:
 
     assert list(crawler.crawl()) == [item]
     assert client.requests[0] is request
+
+
+def test_default_processing_sends_and_parses_once() -> None:
+    request = CrawlerRequest(url="https://example.test/one")
+    response = _response(request.url)
+    parse_calls: list[CrawlerResponse] = []
+
+    def parser(actual_response: CrawlerResponse) -> Iterable[CrawlerItem]:
+        parse_calls.append(actual_response)
+        return []
+
+    client = FakeHttpClient([response])
+    crawler = _crawler(client=client, requests=[request], parser=parser)
+
+    list(crawler.crawl())
+
+    assert client.requests == [request]
+    assert parse_calls == [response]
+
+
+def test_specialized_processing_seam_bypasses_default_send_and_parse() -> None:
+    request = CrawlerRequest(url="https://example.test/one")
+    item = CrawlerItem({"id": 1})
+    client = FakeHttpClient([])
+    crawler = SpecializedCrawler(
+        http_client=client,
+        requests=[request],
+        item=item,
+    )
+
+    assert list(crawler.crawl()) == [item]
+    assert crawler.processed == [request]
+    assert client.requests == []
 
 
 def test_one_response_can_produce_multiple_items_in_order() -> None:

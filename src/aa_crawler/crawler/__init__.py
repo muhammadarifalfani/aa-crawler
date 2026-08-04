@@ -8,6 +8,7 @@ from aa_crawler.crawler.errors import (
     RequestError,
     ResponseError,
 )
+from aa_crawler.crawler.html import HtmlCrawler
 
 __all__ = [
     "BaseCrawler",
@@ -15,6 +16,7 @@ __all__ = [
     "CrawlerItem",
     "CrawlerRequest",
     "CrawlerResponse",
+    "HtmlCrawler",
     "ParsingError",
     "RequestError",
     "ResponseError",
