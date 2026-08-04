@@ -1,5 +1,6 @@
 """Public crawler domain contracts and errors."""
 
+from aa_crawler.crawler.base import BaseCrawler
 from aa_crawler.crawler.contracts import CrawlerItem, CrawlerRequest, CrawlerResponse
 from aa_crawler.crawler.errors import (
     CrawlerError,
@@ -9,6 +10,7 @@ from aa_crawler.crawler.errors import (
 )
 
 __all__ = [
+    "BaseCrawler",
     "CrawlerError",
     "CrawlerItem",
     "CrawlerRequest",
