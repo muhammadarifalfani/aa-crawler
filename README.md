@@ -1,99 +1,131 @@
 # AA Crawler
 
-A multi-platform media monitoring and crawling framework for collecting, processing, and analyzing content from social networks, video platforms, and online news sources.
+A production-ready foundation for building media monitoring and crawling
+systems across social networks, video platforms, and online news sources.
 
 ## Overview
 
-AA Crawler provides a unified foundation for building reliable, extensible crawlers across multiple media platforms. The framework is structured for long-term maintainability — with clear separation of configuration, source code, documentation, operational scripts, and data pipelines.
+AA Crawler provides an explicit configuration and observability baseline plus
+a reusable synchronous crawler stack. Sprint 3 is complete; the project can
+acquire robots-compliant HTML and transform it into validated domain items
+without coupling platform implementations to transport details.
 
-**Current status:** Sprint 2 — Configuration and Observability Foundation is complete. Sprint 3 remains planned; crawler functionality has not been implemented yet.
+**Current status:** Sprint 3 — Synchronous Crawler Foundation is completed.
+Sprint 4 is planned.
 
-## Vision
+## Current capabilities
 
-Build a scalable and extensible media monitoring platform capable of collecting, normalizing, storing, and analyzing information from multiple digital platforms through a unified data pipeline.
+- Immutable, slotted crawler request, response, and item contracts
+- A reusable synchronous HTTP client isolated behind domain adapters
+- Explicit timeout and deterministic retry policies
+- Per-origin `robots.txt` policy and caching
+- Strict HTML content validation and decoding
+- A lazy parser framework with output-contract validation
+- A generic HTML crawler with preserved ordering and fail-fast behavior
+- Frozen, environment-first application settings and deterministic paths
+- Standard-library logging with correlation context and sensitive-data redaction
 
-## Planned Data Sources
+## Current limitations
 
-| Platform      | Type              |
-|---------------|-------------------|
-| Instagram     | Social media      |
-| Facebook      | Social media      |
-| TikTok        | Short-form video  |
-| X (Twitter)   | Microblogging     |
-| Threads       | Social media      |
-| YouTube       | Video             |
-| Online News   | Web / news sites  |
+- No platform-specific crawler
+- No asynchronous runtime or browser automation
+- No scheduler, concurrency, or recursive crawling
+- No persistence layer
+- No plugin system
+- No production crawler CLI
 
-## Planned Components
+## Architecture overview
 
-- Query Management
-- Collector Engine
-- Scheduler
-- Data Pipeline
-- Storage Layer
-- Search Engine
-- Dashboard API
-- AI Insight Engine
+The synchronous crawler stack uses constructor injection and keeps each
+responsibility behind one boundary:
 
-## Technology Stack
+```text
+Configured URLs
+    → BaseCrawler / HtmlCrawler
+    → HtmlFetcher
+    → RobotsPolicy
+    → HttpClient
+    → HtmlDocument
+    → BaseParser
+    → CrawlerItem
+```
 
-| Component       | Technology                          |
-|-----------------|-------------------------------------|
-| Language        | Python 3.12+                        |
-| Package Manager | [uv](https://docs.astral.sh/uv/)    |
-| Version Control | Git                                 |
-| IDE             | Cursor / VS Code                    |
-| Database        | Planned                             |
-| Search Engine   | Planned                             |
+`HttpClient` owns transport, `RobotsPolicy` owns robots decisions,
+`HtmlFetcher` owns HTML validation and decoding, `BaseParser` validates parser
+outputs, and `BaseCrawler` owns the lazy crawl lifecycle. For each configured
+URL, `HtmlCrawler` performs exactly one page transport request after the
+robots decision. Execution is synchronous, ordered, and fail-fast.
+
+## Planned data sources
+
+| Platform | Type |
+|---|---|
+| Instagram | Social media |
+| Facebook | Social media |
+| TikTok | Short-form video |
+| X (Twitter) | Microblogging |
+| Threads | Social media |
+| YouTube | Video |
+| Online News | Web / news sites |
+
+## Technology stack
+
+| Component | Technology |
+|---|---|
+| Language | Python 3.12+ |
+| Package manager | [uv](https://docs.astral.sh/uv/) |
+| HTTP transport | HTTPX, behind `HttpClient` |
+| Configuration | `pydantic-settings` |
+| Quality | Ruff, mypy, pytest, coverage, pre-commit |
+| Version control | Git and pull requests |
+
+Pydantic is used by the settings implementation and is classified by
+[ADR-013](docs/adr/0013-pydantic-dependency-classification.md) as a future
+direct dependency declaration. That metadata alignment has not yet occurred.
 
 ## Requirements
 
 - Python **3.12+**
 - [uv](https://docs.astral.sh/uv/) for dependency and project management
 
-## Project Structure
+## Project structure
 
-```
+```text
 aa_crawler/
-├── config/              # Optional static configuration files; no secrets
-├── data/
-│   ├── raw/             # Unprocessed crawled data
-│   ├── processed/       # Cleaned and transformed outputs
-│   └── failed/          # Records that failed processing
+├── config/                         # Optional static configuration; no secrets
+├── data/                           # Ignored runtime data
 ├── docs/
-│   ├── architecture/    # System design and component docs
-│   ├── sprint/          # Sprint planning and notes
-│   ├── adr/             # Architecture Decision Records
-│   └── diagrams/        # Architecture and flow diagrams
-├── logs/                # Runtime and application logs
-├── scripts/             # Operational and utility scripts
-├── src/
-│   └── aa_crawler/      # Main application package
-├── tests/               # Test suite
-├── pyproject.toml       # Project metadata and dependencies
+│   ├── adr/                        # Architecture Decision Records
+│   ├── architecture/               # Engineering and architecture standards
+│   ├── diagrams/                   # Architecture and flow diagrams
+│   └── sprint/                     # Sprint completion records
+├── logs/                           # Ignored runtime logs
+├── scripts/                        # Operational and development utilities
+├── src/aa_crawler/
+│   ├── configuration/              # Typed settings, loading, and paths
+│   ├── observability/              # Logging, context, and redaction
+│   ├── crawler/                    # Domain contracts and crawl lifecycle
+│   ├── http/                       # Synchronous transport and policies
+│   ├── robots/                     # robots.txt authority
+│   ├── html/                       # Strict HTML acquisition
+│   ├── parser/                     # Lazy parser framework
+│   └── bootstrap.py                # Explicit application composition root
+├── tests/                          # Mirrored automated test suite
+├── pyproject.toml                  # Project metadata and dependencies
 └── README.md
 ```
 
-## Getting Started
-
-### Clone the repository
+## Getting started
 
 ```bash
 git clone https://github.com/muhammadarifalfani/aa-crawler.git
 cd aa_crawler
-```
-
-### Set up the environment
-
-```bash
 uv sync
 ```
 
-This creates a virtual environment and installs project dependencies as defined in `pyproject.toml`.
+## Application bootstrap
 
-## Sprint 2 application bootstrap
-
-Application startup is explicit and uses the public bootstrap API:
+Startup is explicit and uses the public bootstrap API:
 
 ```python
 from pathlib import Path
@@ -107,36 +139,33 @@ settings = bootstrap_application(
 )
 ```
 
-`env_file` is optional and is never discovered automatically. Configuration
-sources have the following precedence, from highest to lowest:
+`env_file` is optional and never discovered automatically. Configuration
+precedence, from highest to lowest, is:
 
 1. Explicit overrides
 2. OS environment variables
 3. An explicitly supplied `.env` file
 4. Model defaults
 
-Bootstrap resolves runtime paths, prepares the required runtime directories,
-and configures logging. None of these operations happen when the package is
-imported.
+Bootstrap resolves runtime paths, prepares required runtime directories, and
+configures logging. None of these operations occur at import time.
 
-### Supported environment variables
-
-AA Crawler recognizes only the following application variables:
+### Environment variables
 
 | Area | Variables |
 |---|---|
 | Core | `AA_ENV`, `AA_DEBUG`, `AA_DATA_DIR`, `AA_LOG_DIR`, `AA_CONFIG_DIR`, `AA_TEMP_DIR` |
 | Logging | `AA_LOG_LEVEL`, `AA_LOG_CONSOLE_ENABLED`, `AA_LOG_FILE_ENABLED`, `AA_LOG_FORMAT`, `AA_LOG_FILE_NAME`, `AA_LOG_MAX_BYTES`, `AA_LOG_BACKUP_COUNT` |
 
-Application variables must use the `AA_` prefix. Unknown `AA_` variables are
-rejected, while unrelated non-`AA_` variables are ignored. `AA_HTTP_PROXY` and
-`AA_HTTPS_PROXY` are reserved for future use and are not active. Never commit
-secrets or a local `.env` file.
+Application variables use the `AA_` prefix. Unknown `AA_` variables are
+rejected; unrelated variables are ignored. `AA_HTTP_PROXY` and
+`AA_HTTPS_PROXY` are reserved and inactive. Never commit secrets or a local
+`.env` file.
 
 ### Runtime paths
 
-- `base_dir` is supplied explicitly.
-- Relative runtime paths are anchored below `base_dir`; traversal outside it is rejected.
+- `base_dir` is explicit.
+- Relative runtime paths are anchored below `base_dir`; traversal is rejected.
 - Absolute paths remain absolute.
 - Bootstrap prepares `data_dir` and `temp_dir` idempotently.
 - `log_dir` is prepared only when file logging is enabled.
@@ -144,48 +173,38 @@ secrets or a local `.env` file.
 
 ### Logging and observability
 
-The `aa_crawler` logger hierarchy writes text logs to stderr by default at
-`INFO`. Optional UTF-8 file logging uses `aa-crawler.log`, rotates at 10 MiB,
-and retains five backups; file logging is disabled by default. Missing
-correlation context is rendered as `-`, and recognized sensitive values are
-replaced with `[REDACTED]`. JSON logging and comprehensive PII detection are not
-implemented. Logging is configured during bootstrap, never at import time.
+The `aa_crawler` logger hierarchy writes text logs to stderr at `INFO` by
+default. Optional UTF-8 file logging uses `aa-crawler.log`, rotates at 10 MiB,
+and retains five backups. Missing correlation context is rendered as `-`, and
+recognized sensitive values are replaced with `[REDACTED]`. JSON logging,
+metrics, tracing, and comprehensive PII detection are not implemented.
 
 ## Roadmap
 
 | Sprint | Focus | Status |
-|--------|-------|--------|
-| **Sprint 1** | Project Foundation — repository layout, documentation structure, tooling setup | **Completed** |
-| **Sprint 2** | Configuration & Observability — configuration management, environment variables, runtime paths, logging, observability, application bootstrap | **Completed** |
-| **Sprint 3** | Core Crawler Framework — base abstractions, crawler interface, plugin architecture | Planned |
-| **Sprint 4** | Request Engine — HTTP client layer, rate limiting, retry logic, anti-bot handling | Planned |
-| **Sprint 5** | Social Platform Crawlers — Instagram, Facebook, Threads | Planned |
-| **Sprint 6** | Short-Form & Microblog Crawlers — TikTok, X (Twitter) | Planned |
-| **Sprint 7** | Video & News Crawlers — YouTube, Online News | Planned |
-| **Sprint 8** | Data Processing Pipeline — ingestion, normalization, validation, output to `data/processed/` | Planned |
-| **Sprint 9** | Orchestration & Monitoring — job scheduling, health checks, failure handling via `data/failed/` | Planned |
-| **Sprint 10** | Production Hardening — performance tuning, deployment, operational documentation | Planned |
+|---|---|---|
+| **Sprint 1** | Repository foundation, policies, and tooling | **Completed** |
+| **Sprint 2** | Configuration, runtime paths, observability, and bootstrap | **Completed** |
+| **Sprint 3** | Synchronous crawler contracts, transport, robots, HTML, parsing, and composition | **Completed** |
+| **Sprint 4** | First production evolution scope, subject to approved backlog and ADR entry conditions | Planned |
+| **Sprint 5+** | Platform crawlers, processing, persistence, orchestration, and production hardening | Planned |
 
 ## Documentation
 
-Project documentation lives under `docs/`:
+- [Engineering Standards](docs/architecture/engineering-standards.md)
+- [Architecture Decision Record index](docs/adr/README.md)
+- [Sprint 3 completion record](docs/sprint/sprint-3.md)
+- [Contribution guide](CONTRIBUTING.md)
 
-| Directory            | Purpose                                    |
-|----------------------|--------------------------------------------|
-| `docs/architecture/` | High-level system design and components    |
-| `docs/sprint/`       | Sprint goals, tasks, and progress          |
-| `docs/adr/`          | Architecture Decision Records              |
-| `docs/diagrams/`     | Visual diagrams and workflow illustrations |
+## Data layout
 
-## Data Layout
-
-| Path               | Purpose                                    |
-|--------------------|--------------------------------------------|
-| `data/raw/`        | Raw crawled content before transformation  |
-| `data/processed/`  | Normalized and processed outputs           |
-| `data/failed/`     | Failed records for inspection and retry    |
+| Path | Purpose |
+|---|---|
+| `data/raw/` | Raw crawled content before transformation |
+| `data/processed/` | Normalized and processed output |
+| `data/failed/` | Failed records for inspection |
 
 ## License
 
-This project is currently under active development.
-The license will be determined before the first stable release.
+This project is under active development. The license will be determined
+before the first stable release.
