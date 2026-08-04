@@ -681,7 +681,22 @@ An Architecture Decision Record must be created when:
 - A breaking change to the module structure or public API is proposed.
 - A deviation from these standards is required.
 
-ADRs live in `docs/adr/` and follow the naming convention `NNNN-<title>.md`.
+`docs/adr/` is the canonical ADR location. Files use an immutable four-digit
+sequence and a lowercase kebab-case title, such as
+`0001-configuration-source-precedence.md`; documents display the corresponding
+decision as `ADR-001`.
+
+ADR statuses are:
+
+- **Accepted** — approved and part of the supported architecture.
+- **Proposed** — under review; no decision is approved yet.
+- **Deferred** — intentionally postponed until a documented trigger occurs.
+- **Superseded** — replaced by a later ADR that preserves the historical record.
+
+Accepted ADRs are never renumbered or silently rewritten. When an accepted
+decision changes, create a new ADR that supersedes the historical decision.
+Review the ADR index and all Proposed or triggered Deferred ADRs during sprint
+closure.
 
 ### 15.4 Standards Review
 
