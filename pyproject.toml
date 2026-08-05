@@ -9,6 +9,7 @@ authors = [
 ]
 dependencies = [
     "httpx>=0.28.1,<0.29",
+    "pydantic>=2.13.4,<3",
     "pydantic-settings>=2.14.2,<2.15",
 ]
 
