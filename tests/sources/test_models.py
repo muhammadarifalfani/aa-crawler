@@ -54,7 +54,11 @@ def test_profile_is_immutable_equal_hashable_and_keyword_only() -> None:
 def test_public_export_is_explicit() -> None:
     import aa_crawler.sources as sources
 
-    assert sources.__all__ == ["SourceProfile"]
+    assert sources.__all__ == [
+        "SourceProfile",
+        "SourceRegistry",
+        "SourceRegistryError",
+    ]
     assert sources.SourceProfile is SourceProfile
 
 
