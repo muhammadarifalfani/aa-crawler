@@ -2,6 +2,7 @@ import pytest
 
 from aa_crawler.crawler import ParsingError
 from aa_crawler.parser import (
+    ArticleParserError,
     ParserContractError,
     ParserError,
     ParserExecutionError,
@@ -10,7 +11,7 @@ from aa_crawler.parser import (
 
 @pytest.mark.parametrize(
     "error_type",
-    [ParserError, ParserContractError, ParserExecutionError],
+    [ParserError, ParserContractError, ParserExecutionError, ArticleParserError],
 )
 def test_parser_errors_inherit_parsing_error(error_type: type[ParserError]) -> None:
     error = error_type("safe parser failure")
@@ -20,5 +21,6 @@ def test_parser_errors_inherit_parsing_error(error_type: type[ParserError]) -> N
 
 
 def test_specific_errors_inherit_parser_error() -> None:
+    assert issubclass(ArticleParserError, ParserError)
     assert issubclass(ParserContractError, ParserError)
     assert issubclass(ParserExecutionError, ParserError)

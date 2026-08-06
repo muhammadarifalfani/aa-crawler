@@ -13,3 +13,7 @@ class ParserContractError(ParserError):
 
 class ParserExecutionError(ParserError):
     """Raised when parser implementation execution fails unexpectedly."""
+
+
+class ArticleParserError(ParserError):
+    """Raised when article metadata cannot be resolved safely."""
