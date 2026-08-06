@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import httpx
 
 _DEFAULT_RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+_RETRYABLE_METHODS = frozenset({"GET", "HEAD"})
 
 
 def _validated_seconds(value: float, *, field_name: str, positive: bool) -> float:
@@ -56,6 +57,10 @@ class RetryPolicy:
     retry_statuses: frozenset[int] = field(
         default_factory=lambda: _DEFAULT_RETRY_STATUSES
     )
+    retryable_methods: frozenset[str] = field(
+        default=_RETRYABLE_METHODS,
+        init=False,
+    )
 
     def __post_init__(self) -> None:
         if isinstance(self.max_attempts, bool) or not isinstance(
@@ -92,6 +97,12 @@ class RetryPolicy:
     def should_retry_status(self, status_code: int) -> bool:
         """Return whether a response status is eligible for retry."""
         return status_code in self.retry_statuses
+
+    def is_method_retryable(self, method: str) -> bool:
+        """Return whether a normalized request method permits automatic retry."""
+        if not isinstance(method, str):
+            raise TypeError("method must be a string")
+        return method.upper() in self.retryable_methods
 
     def backoff_seconds(self, attempt_number: int) -> float:
         """Return the delay before a 1-based attempt number."""

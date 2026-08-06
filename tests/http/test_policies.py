@@ -44,6 +44,7 @@ def test_retry_policy_defaults() -> None:
     assert policy.backoff_base == 0.5
     assert policy.backoff_max == 8.0
     assert policy.retry_statuses == frozenset({408, 429, 500, 502, 503, 504})
+    assert policy.retryable_methods == frozenset({"GET", "HEAD"})
 
 
 @pytest.mark.parametrize(
@@ -69,6 +70,28 @@ def test_retry_status_lookup() -> None:
 
     assert policy.should_retry_status(503)
     assert not policy.should_retry_status(404)
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "get", "head", "GeT", "HeAd"])
+def test_retry_method_lookup_normalizes_eligible_methods(method: str) -> None:
+    assert RetryPolicy().is_method_retryable(method)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["POST", "PUT", "PATCH", "DELETE", "CONNECT", "OPTIONS", "TRACE", "CUSTOM"],
+)
+def test_retry_method_lookup_rejects_non_eligible_methods(method: str) -> None:
+    assert not RetryPolicy().is_method_retryable(method)
+
+
+def test_retryable_methods_are_fixed_and_immutable() -> None:
+    policy = RetryPolicy()
+
+    with pytest.raises(AttributeError):
+        policy.retryable_methods.add("POST")  # type: ignore[attr-defined]
+    with pytest.raises(TypeError):
+        RetryPolicy(retryable_methods=frozenset({"POST"}))  # type: ignore[call-arg]
 
 
 def test_retry_policy_exponential_backoff_and_cap() -> None:

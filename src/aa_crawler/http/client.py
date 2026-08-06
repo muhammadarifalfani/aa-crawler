@@ -61,7 +61,12 @@ class HttpClient:
             RequestError: If HTTPX cannot execute the request.
             ResponseError: If HTTPX reports a response-level failure.
         """
-        for attempt_number in range(1, self._retry_policy.max_attempts + 1):
+        attempt_limit = (
+            self._retry_policy.max_attempts
+            if self._retry_policy.is_method_retryable(request.method)
+            else 1
+        )
+        for attempt_number in range(1, attempt_limit + 1):
             delay = self._retry_policy.backoff_seconds(attempt_number)
             if delay > 0:
                 _sleep(delay)
@@ -69,14 +74,14 @@ class HttpClient:
             try:
                 response = self._client.send(to_httpx_request(request))
             except _RETRYABLE_EXCEPTIONS as error:
-                if attempt_number == self._retry_policy.max_attempts:
+                if attempt_number == attempt_limit:
                     raise translate_httpx_error(error) from error
                 continue
             except httpx.HTTPError as error:
                 raise translate_httpx_error(error) from error
 
             if self._retry_policy.should_retry_status(response.status_code):
-                if attempt_number == self._retry_policy.max_attempts:
+                if attempt_number == attempt_limit:
                     raise ResponseError(
                         "HTTP response remained retryable after all attempts"
                     )
