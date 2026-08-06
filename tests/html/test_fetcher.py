@@ -18,10 +18,13 @@ from aa_crawler.html import (
     HtmlFetcher,
 )
 from aa_crawler.http import HttpClient
+from aa_crawler.identity import RequestIdentity
 from aa_crawler.robots import RobotsPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+_IDENTITY = RequestIdentity(product_version="1.0.0")
 
 
 def _response(
@@ -55,7 +58,12 @@ class FakeHttpClient(HttpClient):
 
 
 class FakeRobotsPolicy(RobotsPolicy):
-    def __init__(self, decisions: Iterable[bool]) -> None:
+    def __init__(
+        self,
+        decisions: Iterable[bool],
+        identity: RequestIdentity,
+    ) -> None:
+        self._identity = identity
         self._decisions = iter(decisions)
         self.targets: list[str] = []
 
@@ -68,35 +76,44 @@ def _fetcher(
     *,
     responses: Iterable[CrawlerResponse | Exception],
     decisions: Iterable[bool] = (True,),
-    user_agent: str = "AA-Crawler",
+    identity: RequestIdentity = _IDENTITY,
 ) -> tuple[HtmlFetcher, FakeHttpClient, FakeRobotsPolicy]:
     client = FakeHttpClient(responses)
-    robots = FakeRobotsPolicy(decisions)
+    robots = FakeRobotsPolicy(decisions, identity)
     return (
         HtmlFetcher(
             http_client=client,
             robots_policy=robots,
-            user_agent=user_agent,
+            identity=identity,
         ),
         client,
         robots,
     )
 
 
-@pytest.mark.parametrize("user_agent", ["", " ", "\t"])
-def test_empty_user_agent_is_rejected(user_agent: str) -> None:
-    with pytest.raises(ValueError, match="must not be empty"):
+def test_fetcher_retains_required_identity() -> None:
+    fetcher, _, robots = _fetcher(responses=[])
+
+    assert fetcher.identity is _IDENTITY
+    assert robots.identity is _IDENTITY
+
+
+def test_mismatched_identity_is_rejected_before_network_access() -> None:
+    client = FakeHttpClient([])
+    robots = FakeRobotsPolicy(
+        [],
+        RequestIdentity(product_version="2.0.0"),
+    )
+
+    with pytest.raises(ValueError, match="identities must match"):
         HtmlFetcher(
-            http_client=FakeHttpClient([]),
-            robots_policy=FakeRobotsPolicy([]),
-            user_agent=user_agent,
+            http_client=client,
+            robots_policy=robots,
+            identity=_IDENTITY,
         )
 
-
-def test_user_agent_is_normalized() -> None:
-    fetcher, _, _ = _fetcher(responses=[], user_agent="  AA-Crawler  ")
-
-    assert fetcher._user_agent == "AA-Crawler"
+    assert client.requests == []
+    assert robots.targets == []
 
 
 @pytest.mark.parametrize(
@@ -115,7 +132,7 @@ def test_malformed_url_is_rejected_before_policy_check(url: str) -> None:
 
 def test_allowed_url_builds_get_request_and_reuses_dependencies() -> None:
     fetcher, client, robots = _fetcher(responses=[_response()])
-    metadata = {"request_id": "42"}
+    metadata = {"request_id": "42", "user_agent": "MetadataBot/9.9"}
 
     document = fetcher.fetch(url="https://example.test/page", metadata=metadata)
 
@@ -124,11 +141,37 @@ def test_allowed_url_builds_get_request_and_reuses_dependencies() -> None:
     request = client.requests[0]
     assert request.url == "https://example.test/page"
     assert request.method == "GET"
-    assert request.headers["User-Agent"] == "AA-Crawler"
+    assert request.headers["User-Agent"] == _IDENTITY.user_agent
     assert request.body is None
     assert document.metadata == metadata
     assert fetcher._http_client is client
     assert fetcher._robots_policy is robots
+
+
+def test_robots_and_page_requests_share_canonical_user_agent() -> None:
+    client = FakeHttpClient(
+        [
+            _response(body=b"User-agent: *\nAllow: /"),
+            _response(),
+        ]
+    )
+    robots = RobotsPolicy(http_client=client, identity=_IDENTITY)
+    fetcher = HtmlFetcher(
+        http_client=client,
+        robots_policy=robots,
+        identity=_IDENTITY,
+    )
+
+    fetcher.fetch(url="https://example.test/page")
+
+    assert [request.headers["User-Agent"] for request in client.requests] == [
+        _IDENTITY.user_agent,
+        _IDENTITY.user_agent,
+    ]
+    assert [request.url for request in client.requests] == [
+        "https://example.test/robots.txt",
+        "https://example.test/page",
+    ]
 
 
 def test_disallowed_url_does_not_request_page() -> None:
