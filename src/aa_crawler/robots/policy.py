@@ -5,6 +5,7 @@ from urllib.robotparser import RobotFileParser
 
 from aa_crawler.crawler import CrawlerRequest, CrawlerResponse
 from aa_crawler.http import HttpClient
+from aa_crawler.identity import RequestIdentity
 from aa_crawler.robots.errors import RobotsError
 
 
@@ -32,23 +33,35 @@ def _resolve_origin(target_url: str) -> tuple[str, str]:
 class RobotsPolicy:
     """Fetch, cache, and evaluate robots.txt rules by origin."""
 
-    def __init__(self, *, http_client: HttpClient, user_agent: str) -> None:
-        normalized_user_agent = user_agent.strip()
-        if not normalized_user_agent:
-            raise ValueError("user_agent must not be empty")
+    def __init__(
+        self,
+        *,
+        http_client: HttpClient,
+        identity: RequestIdentity,
+    ) -> None:
         self._http_client = http_client
-        self._user_agent = normalized_user_agent
+        self._identity = identity
         self._cache: dict[str, RobotFileParser] = {}
+
+    @property
+    def identity(self) -> RequestIdentity:
+        """Return the authoritative request identity for this policy."""
+        return self._identity
 
     def allowed(self, *, target_url: str) -> bool:
         """Return whether the configured user agent may fetch a target URL."""
         origin, robots_url = _resolve_origin(target_url)
         parser = self._cache.get(origin)
         if parser is None:
-            response = self._http_client.send(CrawlerRequest(url=robots_url))
+            response = self._http_client.send(
+                CrawlerRequest(
+                    url=robots_url,
+                    headers={"User-Agent": self.identity.user_agent},
+                )
+            )
             parser = self._parser_from_response(response, robots_url=robots_url)
             self._cache[origin] = parser
-        return parser.can_fetch(self._user_agent, target_url)
+        return parser.can_fetch(self.identity.user_agent, target_url)
 
     def clear_cache(self) -> None:
         """Discard all cached robots rules for this policy instance."""

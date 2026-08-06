@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from aa_crawler.http import HttpClient
+    from aa_crawler.identity import RequestIdentity
     from aa_crawler.robots import RobotsPolicy
 
 _HTML_MEDIA_TYPES = frozenset({"text/html", "application/xhtml+xml"})
@@ -63,14 +64,18 @@ class HtmlFetcher:
         *,
         http_client: HttpClient,
         robots_policy: RobotsPolicy,
-        user_agent: str,
+        identity: RequestIdentity,
     ) -> None:
-        normalized_user_agent = user_agent.strip()
-        if not normalized_user_agent:
-            raise ValueError("user_agent must not be empty")
+        if identity != robots_policy.identity:
+            raise ValueError("HTML and robots request identities must match")
         self._http_client = http_client
         self._robots_policy = robots_policy
-        self._user_agent = normalized_user_agent
+        self._identity = identity
+
+    @property
+    def identity(self) -> RequestIdentity:
+        """Return the authoritative request identity for this fetcher."""
+        return self._identity
 
     def fetch(
         self,
@@ -85,7 +90,7 @@ class HtmlFetcher:
 
         request = CrawlerRequest(
             url=url,
-            headers={"User-Agent": self._user_agent},
+            headers={"User-Agent": self.identity.user_agent},
             metadata={} if metadata is None else metadata,
         )
         response = self._http_client.send(request)

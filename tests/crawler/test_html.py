@@ -20,11 +20,14 @@ from aa_crawler.html import (
     HtmlFetcher,
 )
 from aa_crawler.http import HttpClient
+from aa_crawler.identity import RequestIdentity
 from aa_crawler.parser import BaseParser, ParserContractError, ParserError
 from aa_crawler.robots import RobotsPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
+
+_IDENTITY = RequestIdentity(product_version="1.0.0")
 
 
 def _response(url: str) -> CrawlerResponse:
@@ -58,7 +61,13 @@ class FakeHttpClient(HttpClient):
 
 
 class FakeRobotsPolicy(RobotsPolicy):
-    def __init__(self, decisions: Iterable[bool], events: list[str]) -> None:
+    def __init__(
+        self,
+        decisions: Iterable[bool],
+        events: list[str],
+        identity: RequestIdentity,
+    ) -> None:
+        self._identity = identity
         self._decisions = iter(decisions)
         self._events = events
         self.targets: list[str] = []
@@ -115,11 +124,12 @@ def _crawler(
     robots = FakeRobotsPolicy(
         [True] * len(url_values) if decisions is None else decisions,
         event_log,
+        _IDENTITY,
     )
     fetcher = HtmlFetcher(
         http_client=client,
         robots_policy=robots,
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
     parser = RecordingParser(outputs)
     crawler = HtmlCrawler(

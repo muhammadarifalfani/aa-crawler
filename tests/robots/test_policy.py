@@ -12,10 +12,13 @@ from aa_crawler.crawler import (
     ResponseError,
 )
 from aa_crawler.http import HttpClient
+from aa_crawler.identity import RequestIdentity
 from aa_crawler.robots import RobotsError, RobotsPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+_IDENTITY = RequestIdentity(product_version="1.0.0")
 
 
 def _response(status_code: int = 200, body: bytes = b"") -> CrawlerResponse:
@@ -41,19 +44,10 @@ class FakeHttpClient(HttpClient):
         return outcome
 
 
-@pytest.mark.parametrize("user_agent", ["", " ", "\t\n"])
-def test_empty_user_agent_is_rejected(user_agent: str) -> None:
-    with pytest.raises(ValueError, match="must not be empty"):
-        RobotsPolicy(http_client=FakeHttpClient([]), user_agent=user_agent)
+def test_policy_retains_required_identity() -> None:
+    policy = RobotsPolicy(http_client=FakeHttpClient([]), identity=_IDENTITY)
 
-
-def test_user_agent_is_normalized() -> None:
-    policy = RobotsPolicy(
-        http_client=FakeHttpClient([]),
-        user_agent="  AA-Crawler  ",
-    )
-
-    assert policy._user_agent == "AA-Crawler"
+    assert policy.identity is _IDENTITY
 
 
 @pytest.mark.parametrize(
@@ -67,11 +61,12 @@ def test_user_agent_is_normalized() -> None:
 )
 def test_robots_url_resolution(target_url: str, robots_url: str) -> None:
     client = FakeHttpClient([_response()])
-    policy = RobotsPolicy(http_client=client, user_agent="AA-Crawler")
+    policy = RobotsPolicy(http_client=client, identity=_IDENTITY)
 
     assert policy.allowed(target_url=target_url)
     assert client.requests[0].url == robots_url
     assert client.requests[0].method == "GET"
+    assert client.requests[0].headers["User-Agent"] == _IDENTITY.user_agent
     assert client.requests[0].body is None
 
 
@@ -80,7 +75,7 @@ def test_robots_url_resolution(target_url: str, robots_url: str) -> None:
     ["example.test/path", "https:///path", "https://example.test:invalid/path"],
 )
 def test_malformed_target_url_is_rejected(target_url: str) -> None:
-    policy = RobotsPolicy(http_client=FakeHttpClient([]), user_agent="AA-Crawler")
+    policy = RobotsPolicy(http_client=FakeHttpClient([]), identity=_IDENTITY)
 
     with pytest.raises(RobotsError, match="target URL"):
         policy.allowed(target_url=target_url)
@@ -101,17 +96,40 @@ def test_successful_rules_are_evaluated(
 ) -> None:
     policy = RobotsPolicy(
         http_client=FakeHttpClient([_response(body=body)]),
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
 
     assert policy.allowed(target_url=target_url) is expected
+
+
+def test_can_fetch_uses_the_request_identity_user_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_user_agents: list[str] = []
+    original_can_fetch = RobotFileParser.can_fetch
+
+    def record_can_fetch(
+        parser: RobotFileParser,
+        user_agent: str,
+        url: str,
+    ) -> bool:
+        observed_user_agents.append(user_agent)
+        return original_can_fetch(parser, user_agent, url)
+
+    monkeypatch.setattr(RobotFileParser, "can_fetch", record_can_fetch)
+    client = FakeHttpClient([_response(body=b"User-agent: *\nAllow: /")])
+    policy = RobotsPolicy(http_client=client, identity=_IDENTITY)
+
+    assert policy.allowed(target_url="https://example.test/page")
+    assert observed_user_agents == [_IDENTITY.user_agent]
+    assert client.requests[0].headers["User-Agent"] == observed_user_agents[0]
 
 
 @pytest.mark.parametrize("status_code", [401, 403])
 def test_unauthorized_status_denies_all(status_code: int) -> None:
     policy = RobotsPolicy(
         http_client=FakeHttpClient([_response(status_code)]),
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
 
     assert not policy.allowed(target_url="https://example.test/path")
@@ -121,7 +139,7 @@ def test_unauthorized_status_denies_all(status_code: int) -> None:
 def test_missing_status_allows_all(status_code: int) -> None:
     policy = RobotsPolicy(
         http_client=FakeHttpClient([_response(status_code)]),
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
 
     assert policy.allowed(target_url="https://example.test/path")
@@ -131,7 +149,7 @@ def test_missing_status_allows_all(status_code: int) -> None:
 def test_other_status_raises_robots_error(status_code: int) -> None:
     policy = RobotsPolicy(
         http_client=FakeHttpClient([_response(status_code)]),
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
 
     with pytest.raises(RobotsError, match="unsupported status"):
@@ -142,7 +160,7 @@ def test_other_status_raises_robots_error(status_code: int) -> None:
 def test_http_client_error_propagates_unchanged(error: Exception) -> None:
     policy = RobotsPolicy(
         http_client=FakeHttpClient([error]),
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
 
     with pytest.raises(type(error)) as error_info:
@@ -162,7 +180,7 @@ def test_parser_failure_becomes_chained_robots_error(
     monkeypatch.setattr(RobotFileParser, "parse", fail_parse)
     policy = RobotsPolicy(
         http_client=FakeHttpClient([_response(body=b"User-agent: *")]),
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
 
     with pytest.raises(RobotsError, match="parsing failed") as error_info:
@@ -176,7 +194,7 @@ def test_invalid_utf8_is_decoded_with_replacement() -> None:
     body = b"User-agent: *\n# invalid: \xff\nAllow: /"
     policy = RobotsPolicy(
         http_client=FakeHttpClient([_response(body=body)]),
-        user_agent="AA-Crawler",
+        identity=_IDENTITY,
     )
 
     assert policy.allowed(target_url="https://example.test/path")
@@ -184,7 +202,7 @@ def test_invalid_utf8_is_decoded_with_replacement() -> None:
 
 def test_same_origin_reuses_cached_parser_and_client() -> None:
     client = FakeHttpClient([_response(body=b"User-agent: *\nAllow: /")])
-    policy = RobotsPolicy(http_client=client, user_agent="AA-Crawler")
+    policy = RobotsPolicy(http_client=client, identity=_IDENTITY)
 
     assert policy.allowed(target_url="https://example.test/one")
     assert policy.allowed(target_url="https://example.test/two")
@@ -195,7 +213,7 @@ def test_same_origin_reuses_cached_parser_and_client() -> None:
 
 def test_different_origins_use_separate_cache_entries() -> None:
     client = FakeHttpClient([_response(), _response()])
-    policy = RobotsPolicy(http_client=client, user_agent="AA-Crawler")
+    policy = RobotsPolicy(http_client=client, identity=_IDENTITY)
 
     policy.allowed(target_url="https://one.example/path")
     policy.allowed(target_url="https://two.example/path")
@@ -206,9 +224,25 @@ def test_different_origins_use_separate_cache_entries() -> None:
     ]
 
 
+def test_policies_with_different_identities_do_not_share_cache() -> None:
+    first_client = FakeHttpClient([_response()])
+    second_client = FakeHttpClient([_response()])
+    first = RobotsPolicy(http_client=first_client, identity=_IDENTITY)
+    second_identity = RequestIdentity(product_version="2.0.0")
+    second = RobotsPolicy(http_client=second_client, identity=second_identity)
+
+    assert first.allowed(target_url="https://example.test/page")
+    assert second.allowed(target_url="https://example.test/page")
+
+    assert len(first_client.requests) == 1
+    assert len(second_client.requests) == 1
+    assert first_client.requests[0].headers["User-Agent"] == _IDENTITY.user_agent
+    assert second_client.requests[0].headers["User-Agent"] == second_identity.user_agent
+
+
 def test_clear_cache_forces_refetch() -> None:
     client = FakeHttpClient([_response(), _response()])
-    policy = RobotsPolicy(http_client=client, user_agent="AA-Crawler")
+    policy = RobotsPolicy(http_client=client, identity=_IDENTITY)
 
     policy.allowed(target_url="https://example.test/one")
     policy.clear_cache()
