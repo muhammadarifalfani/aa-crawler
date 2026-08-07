@@ -242,6 +242,9 @@ def test_public_api_is_explicit_and_minimal() -> None:
     import aa_crawler.sources as sources
 
     assert sources.__all__ == [
+        "CNN_INDONESIA_PROFILE",
+        "DEFAULT_SOURCE_PROFILES",
+        "KOMPAS_PROFILE",
         "SourceProfile",
         "SourceRegistry",
         "SourceRegistryError",
