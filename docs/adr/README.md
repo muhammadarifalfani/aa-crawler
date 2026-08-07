@@ -12,6 +12,8 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
+Current totals: 11 Accepted, 3 Proposed, 2 Deferred, and 0 Superseded.
+
 ## Numbering and filenames
 
 Files use an immutable four-digit sequence and a lowercase kebab-case title,
@@ -37,7 +39,7 @@ that supersedes the historical record.
 | [ADR-010](0010-constructor-injection-and-composition.md) | Constructor injection and explicit composition ownership | Accepted | Build dependencies explicitly; prohibit service locators and global settings | `bootstrap.py`, package constructors | Material object-graph or lifecycle growth |
 | [ADR-011](0011-sprint-4-api-and-package-policy.md) | Sprint 4 public API and package policy | Accepted | Partially freeze mature APIs while crawler seams remain provisional | Public package facades | First platform crawler completion |
 | [ADR-013](0013-pydantic-dependency-classification.md) | Pydantic dependency classification | Accepted | Treat directly imported Pydantic as a strategic direct dependency | Configuration models and loader | Dependency metadata PR or Pydantic upgrade |
-| [ADR-014](0014-user-agent-ownership.md) | User-agent ownership | Proposed | Select one authoritative identity for robots and page requests | `robots/`, `html/` | Before production crawling |
+| [ADR-014](0014-user-agent-ownership.md) | User-agent ownership | Accepted | Inject one immutable identity for robots evaluation, robots retrieval, and page retrieval | `identity/`, `robots/`, `html/` | Identity override, rotation, or alternate execution family |
 | [ADR-015](0015-retry-idempotency.md) | Retry idempotency | Proposed | Define retry eligibility for non-idempotent methods | `http/` | Before any non-GET request |
 | [ADR-016](0016-logging-redaction-scope.md) | Logging redaction scope | Proposed | Define guarantees across owned and unrelated handlers | `observability/` | Before sensitive platform logging |
 | [ADR-017](0017-metadata-portability.md) | Metadata portability | Deferred | Retain in-process mappings until portability is required | Crawler and HTML contracts | Persistence, plugins, queues, or workers |
