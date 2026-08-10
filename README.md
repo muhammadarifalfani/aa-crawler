@@ -5,68 +5,115 @@ systems across social networks, video platforms, and online news sources.
 
 ## Overview
 
-AA Crawler provides an explicit configuration and observability baseline plus
-a reusable synchronous crawler stack. Sprint 3 is complete; the project can
-acquire robots-compliant HTML and transform it into validated domain items
-without coupling platform implementations to transport details.
+AA Crawler provides explicit configuration and observability foundations plus
+a reusable synchronous crawler stack. It supports robots-aware HTML acquisition,
+validated request identity, deterministic HTTP policies, and source-agnostic
+article composition without coupling source declarations to transport details.
 
-**Current status:** Sprint 3 — Synchronous Crawler Foundation is completed.
-Sprint 4 is planned.
+**Current status:** Sprint 4 implementation is complete and documentation
+closure is in progress. Sprint 5 remains future work.
 
 ## Current capabilities
 
-- Immutable, slotted crawler request, response, and item contracts
-- A reusable synchronous HTTP client isolated behind domain adapters
-- Explicit timeout and deterministic retry policies
+- Validated immutable crawler identity shared by robots and page acquisition
+- Synchronous HTTP transport with explicit timeouts and bounded retry policy
 - Per-origin `robots.txt` policy and caching
-- Strict HTML content validation and decoding
-- A lazy parser framework with output-contract validation
-- A generic HTML crawler with preserved ordering and fail-fast behavior
+- Strict, immutable HTML document acquisition and validation
+- Immutable crawler and normalized article contracts
+- Source-agnostic `NewsArticle` JSON-LD parsing
+- Declarative source profiles with exact-host registry lookup
+- Explicit, static parser composition without dynamic plugins
+- Synthetic end-to-end source-composition integration tests
 - Frozen, environment-first application settings and deterministic paths
 - Standard-library logging with correlation context and sensitive-data redaction
 
 ## Current limitations
 
-- No platform-specific crawler
-- No asynchronous runtime or browser automation
-- No scheduler, concurrency, or recursive crawling
-- No persistence layer
-- No plugin system
-- No production crawler CLI
+- Source composition assumes an `HtmlDocument` has already been acquired.
+- No application-level acquisition-to-parsing orchestrator exists yet.
+- `jsonld_article` is the only supported parser family.
+- Custom adapter loading and a generic adapter runtime are not implemented.
+- The production source set is intentionally small, and live crawling remains
+  governance-controlled.
+- No persistence, scheduler, queue, distributed execution, asynchronous
+  crawling, browser rendering, or live profile reload exists.
 
 ## Architecture overview
 
-The synchronous crawler stack uses constructor injection and keeps each
-responsibility behind one boundary:
+The major packages each own a narrow responsibility:
+
+| Package | Responsibility |
+|---|---|
+| `configuration` | Typed settings, explicit loading, and runtime paths |
+| `observability` | Logging setup, correlation context, and redaction |
+| `identity` | Validated immutable request identity |
+| `crawler` | Crawler contracts and synchronous lifecycle |
+| `http` | HTTPX transport, timeout, and retry policies |
+| `robots` | `robots.txt` retrieval, evaluation, and caching |
+| `html` | Robots-aware HTML acquisition and strict decoding |
+| `contracts` | Normalized application-level data contracts |
+| `parser` | Lazy parser lifecycle and generic article parsing |
+| `sources` | Declarative profiles and exact-host lookup |
+| `composition` | Explicit source-to-parser construction |
+
+Transport acquisition and source composition remain separate. The current
+source-composition flow is:
 
 ```text
-Configured URLs
-    → BaseCrawler / HtmlCrawler
-    → HtmlFetcher
-    → RobotsPolicy
-    → HttpClient
-    → HtmlDocument
-    → BaseParser
-    → CrawlerItem
+URL
+  → SourceRegistry
+  → SourceProfile
+  → ParserComposer
+  → JsonLdArticleParser
+  → ArticleItem
+  → CrawlerItem
 ```
 
-`HttpClient` owns transport, `RobotsPolicy` owns robots decisions,
-`HtmlFetcher` owns HTML validation and decoding, `BaseParser` validates parser
-outputs, and `BaseCrawler` owns the lazy crawl lifecycle. For each configured
-URL, `HtmlCrawler` performs exactly one page transport request after the
-robots decision. Execution is synchronous, ordered, and fail-fast.
+This flow starts with an already acquired `HtmlDocument`; it is not yet a full
+URL-to-network-to-article application orchestrator.
 
-## Planned data sources
+### Request identity
 
-| Platform | Type |
-|---|---|
-| Instagram | Social media |
-| Facebook | Social media |
-| TikTok | Short-form video |
-| X (Twitter) | Microblogging |
-| Threads | Social media |
-| YouTube | Video |
-| Online News | Web / news sites |
+`RequestIdentity` is immutable and supplies one consistent User-Agent to
+robots retrieval, robots evaluation, and page requests. `HttpClient` remains
+identity-neutral and sends the headers supplied by its caller. Validation
+rejects browser, search-engine, and third-party crawler impersonation.
+
+### Retry behavior
+
+Automatic retries apply only to `GET` and `HEAD`. Other HTTP methods remain
+valid but receive one transport attempt. Retry behavior is owned by the HTTP
+policy and uses bounded deterministic backoff.
+
+### Article parsing
+
+`ArticleItem` represents normalized immutable article metadata.
+`JsonLdArticleParser` extracts source-agnostic `NewsArticle` JSON-LD while
+keeping requested and canonical URLs distinct. Tests use synthetic metadata;
+article-body extraction is not part of the current generic contract.
+
+### Declarative sources
+
+- `SourceProfile` is an immutable declarative source definition.
+- `SourceRegistry` performs exact-host lookup and excludes disabled profiles
+  by default.
+- `ParserComposer` constructs parsers through an explicit static mapping; no
+  dynamic plugin system exists.
+
+Ordinary source onboarding adds a reviewed profile and reuses the generic
+parser when the source is structurally compatible. A source-specific parser or
+adapter should be introduced only when observed evidence requires it.
+
+#### Initial production profiles
+
+| Source | State | Parser | Adapter | Exact hosts |
+|---|---|---|---|---|
+| CNN Indonesia | Enabled | `jsonld_article` | None | `www.cnnindonesia.com` |
+| Kompas | Disabled | `jsonld_article` | None | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` |
+
+Enabled and disabled states record project governance. They do not replace
+`robots.txt`, publisher policy, or legal and operational review, and they do
+not constitute legal approval.
 
 ## Technology stack
 
@@ -75,13 +122,15 @@ robots decision. Execution is synchronous, ordered, and fail-fast.
 | Language | Python 3.12+ |
 | Package manager | [uv](https://docs.astral.sh/uv/) |
 | HTTP transport | HTTPX, behind `HttpClient` |
-| Configuration | `pydantic-settings` |
+| Configuration | Pydantic and `pydantic-settings` |
 | Quality | Ruff, mypy, pytest, coverage, pre-commit |
 | Version control | Git and pull requests |
 
-Pydantic is used by the settings implementation and is classified by
-[ADR-013](docs/adr/0013-pydantic-dependency-classification.md) as a future
-direct dependency declaration. That metadata alignment has not yet occurred.
+Direct runtime dependencies are maintained in `pyproject.toml`:
+
+- `httpx>=0.28.1,<0.29`
+- `pydantic>=2.13.4,<3`
+- `pydantic-settings>=2.14.2,<2.15`
 
 ## Requirements
 
@@ -94,22 +143,22 @@ direct dependency declaration. That metadata alignment has not yet occurred.
 aa_crawler/
 ├── config/                         # Optional static configuration; no secrets
 ├── data/                           # Ignored runtime data
-├── docs/
-│   ├── adr/                        # Architecture Decision Records
-│   ├── architecture/               # Engineering and architecture standards
-│   ├── diagrams/                   # Architecture and flow diagrams
-│   └── sprint/                     # Sprint completion records
+├── docs/                           # ADRs, standards, and sprint records
 ├── logs/                           # Ignored runtime logs
 ├── scripts/                        # Operational and development utilities
 ├── src/aa_crawler/
-│   ├── configuration/              # Typed settings, loading, and paths
+│   ├── configuration/              # Settings, loading, and paths
 │   ├── observability/              # Logging, context, and redaction
-│   ├── crawler/                    # Domain contracts and crawl lifecycle
+│   ├── identity/                   # Request identity contract
+│   ├── crawler/                    # Crawler contracts and lifecycle
 │   ├── http/                       # Synchronous transport and policies
 │   ├── robots/                     # robots.txt authority
 │   ├── html/                       # Strict HTML acquisition
-│   ├── parser/                     # Lazy parser framework
-│   └── bootstrap.py                # Explicit application composition root
+│   ├── contracts/                  # Normalized data contracts
+│   ├── parser/                     # Parser lifecycle and article parsing
+│   ├── sources/                    # Profiles and exact-host lookup
+│   ├── composition/                # Explicit parser construction
+│   └── bootstrap.py                # Application composition root
 ├── tests/                          # Mirrored automated test suite
 ├── pyproject.toml                  # Project metadata and dependencies
 └── README.md
@@ -179,20 +228,36 @@ and retains five backups. Missing correlation context is rendered as `-`, and
 recognized sensitive values are replaced with `[REDACTED]`. JSON logging,
 metrics, tracing, and comprehensive PII detection are not implemented.
 
+## Testing and quality
+
+Ruff enforces linting and formatting, mypy checks the configured typed scope,
+pytest runs the automated suite, coverage enforces the repository threshold,
+and pre-commit runs the integrated checks. Source-composition integration tests
+use synthetic HTML and metadata and do not access external networks.
+
 ## Roadmap
 
 | Sprint | Focus | Status |
 |---|---|---|
 | **Sprint 1** | Repository foundation, policies, and tooling | **Completed** |
 | **Sprint 2** | Configuration, runtime paths, observability, and bootstrap | **Completed** |
-| **Sprint 3** | Synchronous crawler contracts, transport, robots, HTML, parsing, and composition | **Completed** |
-| **Sprint 4** | First production evolution scope, subject to approved backlog and ADR entry conditions | Planned |
-| **Sprint 5+** | Platform crawlers, processing, persistence, orchestration, and production hardening | Planned |
+| **Sprint 3** | Synchronous crawler, HTTP, robots, HTML, and parser foundation | **Completed** |
+| **Sprint 4** | Identity, retry safety, article parsing, and declarative sources | **Implemented; documentation closure** |
+| **Sprint 5** | Future production orchestration and source evolution | Future |
+
+Potential Sprint 5 direction includes application-level orchestration from
+robots-aware acquisition through source resolution and parser composition,
+broader integration testing, additional reviewed source profiles, and targeted
+observability or governance hardening. This direction is not yet an approved
+detailed sprint scope.
 
 ## Documentation
 
 - [Engineering Standards](docs/architecture/engineering-standards.md)
 - [Architecture Decision Record index](docs/adr/README.md)
+- [ADR-014: User-Agent Ownership](docs/adr/0014-user-agent-ownership.md)
+- [ADR-015: Retry Idempotency](docs/adr/0015-retry-idempotency.md)
+- [ADR-020: Declarative Source Architecture](docs/adr/0020-declarative-source-architecture.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 
