@@ -62,6 +62,7 @@ execution.
 - Sprint 4 uses a partial API freeze under ADR-011.
 - ADR-013 classifies Pydantic as a future direct dependency declaration; the
   metadata change remains separate and is not implemented by Sprint 3.
+  **Resolved in Sprint 4:** Pydantic was declared directly in PR #22.
 - Proposed ADR decisions remain unresolved and are not implemented policy.
 
 ## Pull requests
@@ -124,7 +125,9 @@ to that documentation PR.
 - User-agent ownership, retry idempotency, and logging-redaction scope remain
   Proposed ADR topics.
 - Pydantic's direct dependency declaration is approved but not implemented.
-- A full cross-package integration test remains recommended.
+  **Resolved in Sprint 4:** the dependency metadata was aligned in PR #22.
+- A full cross-package integration test remains recommended. **Resolved in
+  Sprint 4:** synthetic source-composition integration was added in PR #32.
 - Sprint 3 APIs are partially frozen rather than fully stable.
 
 ## Deferred work
@@ -147,7 +150,8 @@ Deferred ADRs do not represent implemented policy.
 ## Sprint 4 entry conditions
 
 - Sprint 3 documentation closure is merged.
-- Pydantic dependency metadata is aligned in a separate PR.
+- Pydantic dependency metadata is aligned in a separate PR. **Resolved in
+  Sprint 4:** PR #22 completed the alignment.
 - The Sprint 4 backlog is approved.
 - Proposed security or correctness ADRs are resolved before their corresponding
   production behavior is enabled.
