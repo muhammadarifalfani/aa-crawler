@@ -3,11 +3,11 @@
 | Field            | Value                                      |
 |------------------|--------------------------------------------|
 | **Project**      | AA Crawler                                 |
-| **Sprint**       | Living standard — aligned through Sprint 3 |
+| **Sprint**       | Living standard — aligned through Sprint 4 |
 | **Task**         | Engineering Standards & Development Tooling |
 | **Status**       | Approved                                   |
 | **Author**       | Engineering Team                           |
-| **Last Updated** | 2026-08-04                                 |
+| **Last Updated** | 2026-08-10                                 |
 
 ---
 
@@ -119,11 +119,15 @@ src/aa_crawler/
 ├── bootstrap.py       # Explicit application composition root
 ├── configuration/     # Settings, loading, and runtime paths
 ├── observability/     # Logging, context, and redaction
+├── identity/          # Validated immutable request identity
 ├── crawler/           # Domain contracts and crawl lifecycle
 ├── http/              # Synchronous transport and policies
 ├── robots/            # robots.txt decisions
 ├── html/              # HTML acquisition and validation
-└── parser/            # Lazy parser lifecycle and output validation
+├── contracts/         # Normalized application domain contracts
+├── parser/            # Lazy parsing and generic article extraction
+├── sources/           # Declarative source profiles and exact-host lookup
+└── composition/       # Explicit source-to-parser construction
 ```
 
 New modules must not be created until their sprint task authorizes them.
@@ -167,15 +171,21 @@ Components receive their dependencies (HTTP clients, storage backends, configura
 
 ### Configuration over Hardcode
 
-All environment-specific values (URLs, timeouts, rate limits, credentials, log levels) must be externalized to configuration files or environment variables. No magic numbers or hardcoded endpoints in source code.
+Environment-specific operational values such as credentials, deployment URLs,
+rate limits, and log levels must come from validated configuration. Approved
+immutable policy defaults and reviewed static source-profile declarations may
+live in source code when their ownership is documented by an ADR. Do not scatter
+magic numbers, credentials, or unreviewed endpoints through runtime code.
 
 ### Explicit composition and dependency ownership
 
 Runtime collaborators are supplied through constructor injection. Each
 boundary has one owner: `HttpClient` owns transport, `RobotsPolicy` owns robots
 decisions, `HtmlFetcher` owns HTML validation and decoding, `BaseParser` owns
-parser output validation, and `BaseCrawler` owns the crawl template lifecycle.
-Service locators and implicit global dependency construction are prohibited.
+parser output validation, `BaseCrawler` owns the crawl template lifecycle,
+`SourceRegistry` owns source lookup, and `ParserComposer` owns parser
+construction. Service locators, mutable global registries, and implicit global
+dependency construction are prohibited.
 
 ### Synchronous crawler architecture
 
@@ -184,6 +194,11 @@ Service locators and implicit global dependency construction are prohibited.
 - HTTPX is isolated behind `HttpClient`; domain metadata must not configure
   transport behavior.
 - `TimeoutPolicy` and `RetryPolicy` are explicit constructor dependencies.
+- `RetryPolicy` owns automatic retry eligibility. Only GET and HEAD may receive
+  bounded retries; every other method receives one physical transport attempt.
+  Request metadata and higher layers cannot broaden eligibility.
+- Retry behavior uses the bounded status and transient-exception policy,
+  deterministic exponential backoff, and no jitter or `Retry-After` handling.
 - `RobotsPolicy` is the only robots authority used by HTML acquisition.
 - `HtmlFetcher` performs deterministic content-type validation and strict
   decoding.
@@ -194,16 +209,95 @@ Service locators and implicit global dependency construction are prohibited.
 - `HtmlCrawler` composes `HtmlFetcher` and `BaseParser` and performs exactly one
   page transport request per configured URL.
 
-Crawler package boundaries, contract fields, subclass seams, and Sprint 3
-public APIs remain partially provisional under
-[ADR-011](../adr/0011-sprint-4-api-and-package-policy.md). Mature Sprint 2
-configuration and primary observability APIs are frozen for Sprint 4.
+### Request identity
 
-ADR-014 (user-agent ownership), ADR-015 (retry idempotency), ADR-016
-(logging-redaction scope), and ADR-019 (future execution families) are
-Proposed. They are not implemented policy. Async execution, browser
-automation, plugins, distributed crawling, metrics, and tracing remain future
-or conditional work.
+- `RequestIdentity` is the immutable validated application-scoped identity.
+  Product, version, project URL, and optional contact remain distinct values.
+- One injected identity supplies the same User-Agent for robots retrieval,
+  robots evaluation, and page retrieval through `RobotsPolicy` and
+  `HtmlFetcher`.
+- `HttpClient` remains identity-neutral. Acquisition components must not own
+  duplicate raw User-Agent values.
+- Browser or third-party crawler impersonation and User-Agent rotation are not
+  permitted. Installed-version sourcing, operational contact policy, and any
+  approved CLI override remain future composition-root concerns.
+
+### Article and parser contracts
+
+- `ArticleItem` is the normalized immutable article contract. Its requested
+  URL and canonical URL remain distinct, and article-body extraction is not
+  part of the current generic contract.
+- `JsonLdArticleParser` remains source-agnostic. It prefers JSON-LD
+  `NewsArticle` over generic `Article` and receives the source identifier and
+  exact approved hosts through composition.
+- Parser and source tests use synthetic HTML and metadata. Copied live page
+  content is not the default fixture strategy.
+
+### Declarative source architecture
+
+- `SourceProfile` contains immutable declarative source metadata only: stable
+  identifier, ordered exact hosts, parser family, inert adapter key, and
+  enabled state.
+- `SourceRegistry` performs immutable exact source, hostname, and safe HTTPS URL
+  lookup. It uses no wildcard, suffix, or implicit subdomain matching and
+  excludes disabled profiles from normal lookup.
+- `ParserComposer` constructs parsers only. Parser-family mapping is explicit
+  and static; reflection, dynamic imports, entry points, and plugin scanning
+  are prohibited until separately approved.
+- Ordinary compatible sources are added profile-first and reuse the generic
+  parser. A publisher-specific parser or adapter requires observed evidence;
+  non-null adapter keys remain unsupported.
+
+Profile existence does not authorize network crawling. `enabled=True` makes a
+source available to normal lookup; `enabled=False` retains known state while
+blocking normal lookup and composition. Enablement does not replace robots.txt,
+publisher-policy or legal review, rate limits, or operational safety controls.
+The current reference declarations enable CNN Indonesia and disable Kompas;
+these values are project governance state, not universal policy.
+
+The current Sprint 4 source-composition integration is:
+
+```text
+URL
+  → SourceRegistry
+  → SourceProfile
+  → ParserComposer
+  → JsonLdArticleParser
+  → ArticleItem
+  → CrawlerItem
+```
+
+It assumes an existing `HtmlDocument` and intentionally performs no live
+networking. Future application orchestration will coordinate source resolution,
+robots-aware acquisition, `HtmlDocument` creation, parser composition, and
+article output; that end-to-end runtime does not yet exist.
+
+Actual dependency direction remains explicit: neutral crawler and article
+contracts support transport and parsing; robots and HTML acquisition depend on
+HTTP and request identity; parsing consumes HTML contracts; source profiles are
+declarative; and composition depends on sources and parsers. Future application
+orchestration may coordinate these boundaries but must not create circular
+ownership.
+
+Crawler package boundaries, contract fields, source/composition seams, and
+Sprint 3–4 public APIs remain partially provisional under
+[ADR-011](../adr/0011-sprint-4-api-and-package-policy.md). Mature Sprint 2
+configuration and primary observability APIs remain frozen.
+
+ADR-014 (user-agent ownership), ADR-015 (retry idempotency), and ADR-020
+(declarative source architecture) are Accepted and implemented. ADR-016
+(logging-redaction scope) and ADR-019 (future execution families) remain
+Proposed. ADR-017 (metadata portability) and ADR-018 (error-root taxonomy)
+remain Deferred. Async execution, browser automation, dynamic plugins,
+distributed crawling, metrics, tracing, storage, scheduling, and live profile
+reload remain future or conditional work.
+
+### Public API discipline
+
+- Package `__all__` declarations define intentional public surfaces.
+- Source and composition APIs remain minimal and responsibility-specific.
+- Do not introduce premature compatibility aliases, mutable global registries,
+  or convenience orchestration methods before runtime ownership is approved.
 
 ---
 
@@ -340,16 +434,17 @@ The following require explicit review and must not be changed casually:
 
 Dependencies are organized in `pyproject.toml`:
 
-| Group | Purpose | Examples (planned) |
-|-------|---------|---------------------|
-| `dependencies` | Runtime packages | `httpx`, `pydantic-settings` |
+| Group | Purpose | Current packages |
+|-------|---------|------------------|
+| `dependencies` | Runtime packages | `httpx>=0.28.1,<0.29`, `pydantic>=2.13.4,<3`, `pydantic-settings>=2.14.2,<2.15` |
 | `[dependency-groups] dev` | Development tooling | `ruff`, `pytest`, `mypy`, `pre-commit` |
 
 Dev dependencies must never be imported in runtime code under `src/`.
 
 ### 8.3 Version Pinning
 
-- Runtime dependencies: pin with compatible release specifiers (e.g., `httpx>=0.27,<0.28`) or exact pins for critical packages.
+- Runtime dependencies: use the approved compatible range recorded in
+  `pyproject.toml`, or an exact pin when risk requires it.
 - Dev dependencies: pin to major version ranges acceptable for tooling.
 - Lockfile (`uv.lock`) is committed starting in Sprint 1 and must be maintained whenever approved dependencies change to ensure reproducible environments.
 - Dependency updates are intentional — no drive-by upgrades in feature PRs.
@@ -518,11 +613,15 @@ the root logger.
 aa_crawler                          # Root application logger
 ├── aa_crawler.configuration       # Settings and runtime paths
 ├── aa_crawler.observability       # Logging context and redaction
+├── aa_crawler.identity            # Request identity
 ├── aa_crawler.crawler             # Contracts and crawl lifecycle
 ├── aa_crawler.http                # Synchronous transport
 ├── aa_crawler.robots              # robots.txt policy
 ├── aa_crawler.html                # HTML acquisition
-└── aa_crawler.parser              # Parser framework
+├── aa_crawler.contracts           # Normalized domain contracts
+├── aa_crawler.parser              # Parser framework
+├── aa_crawler.sources             # Source profiles and registry
+└── aa_crawler.composition         # Parser construction
 ```
 
 ---
@@ -537,13 +636,17 @@ aa_crawler                          # Root application logger
 
 ```
 tests/
-├── conftest.py              # Shared fixtures
-├── unit/                    # Unit tests (no I/O, no network)
-│   └── test_<module>.py
-├── integration/             # Integration tests (local services, file I/O)
-│   └── test_<module>.py
-└── fixtures/                # Shared test data files
-    └── sample_response.json
+├── configuration/           # Package-focused unit tests
+├── crawler/                 # Domain and lifecycle tests
+├── http/                    # Transport-policy tests with mock transport
+├── identity/                # Request-identity tests
+├── robots/                  # Robots-policy tests
+├── html/                    # Acquisition-contract tests
+├── contracts/               # Normalized contract tests
+├── parser/                  # Parser lifecycle and synthetic metadata tests
+├── sources/                 # Profile and exact-registry tests
+├── composition/             # Parser-construction tests
+└── integration/             # Cross-package synthetic integration tests
 ```
 
 Test files mirror the `src/aa_crawler/` module structure.
@@ -556,33 +659,46 @@ Test files mirror the `src/aa_crawler/` module structure.
 | Integration | Module interaction | Mocked or local | Medium | Pipeline, storage boundaries |
 | End-to-end | Full crawl → process flow | Live (staging) | Slow | Sprint 9+ |
 
-Foundation tests cover configuration, paths, logging, context, redaction, and
-bootstrap integration. Tests must isolate environment variables, logging and
-correlation state, and filesystem writes; use `tmp_path` for runtime paths.
+Tests cover configuration, paths, observability, identity, crawler contracts,
+HTTP policy, robots, HTML acquisition, article contracts, parsing, source
+lookup, parser composition, and bootstrap integration. Tests must isolate
+environment variables, logging and correlation state, and filesystem writes;
+use `tmp_path` for runtime paths.
+
+Sprint 4 integration tests use synthetic HTML to exercise source resolution and
+parser composition. They assume document acquisition and intentionally do not
+instantiate live networking components.
 
 ### 11.4 Coverage Targets
 
 | Phase | Target |
 |-------|--------|
-| Sprint 1–3 (foundation & framework) | ≥ 70% |
-| Sprint 4–8 (features) | ≥ 80% |
+| Enforced repository minimum | ≥ 70% |
+| Sprint 4–8 engineering target | ≥ 80% |
 | Sprint 9–10 (production) | ≥ 90% |
 
-Coverage is measured with `pytest-cov` and reported in CI (when CI is configured).
+The enforced minimum comes from `pyproject.toml`; higher phase targets guide
+engineering improvement without misrepresenting the active quality gate.
+Coverage is measured with `pytest-cov` and reported in CI when configured.
 
 ### 11.5 Testing Rules
 
 - Tests must be deterministic — no reliance on wall-clock time, random values, or network without mocking.
 - Use `pytest fixtures` for shared setup; avoid global state.
 - Name tests to describe behavior: `test_fetch_posts_returns_empty_list_when_no_results`.
-- Mock external HTTP calls with `httpx` mock transport or `pytest-httpx` / `respx`.
+- Mock external HTTP calls with the installed HTTPX mock transport.
 - Test data files live in `tests/fixtures/` and must not contain real credentials or PII.
+- Prefer synthetic HTML and metadata for parser, source, and integration tests.
+- Normal test execution must not access external networks.
+- Retry tests must replace sleeping with deterministic test doubles.
+- Run Ruff, Ruff format check, mypy, pytest, coverage, and pre-commit across the
+  repository before merge.
 
 ### 11.6 Running Tests
 
 ```bash
 uv run pytest                    # Run all tests
-uv run pytest tests/unit/        # Unit tests only
+uv run pytest tests/http/         # Focused package tests
 uv run pytest -v --cov=aa_crawler  # With coverage report
 ```
 
@@ -657,7 +773,7 @@ A task or sprint item is **Done** when all of the following are satisfied:
 | 3 | Unit tests written and passing for new logic |
 | 4 | `uv run ruff check .` passes with zero errors |
 | 5 | `uv run ruff format --check .` passes |
-| 6 | `uv run mypy src/` passes with zero errors |
+| 6 | `uv run mypy` passes for the configured repository scope |
 | 7 | Pre-commit hooks pass locally |
 | 8 | No secrets, credentials, or `.env` values committed |
 | 9 | Documentation updated if behavior, config, or architecture changed |
@@ -705,11 +821,11 @@ The standards defined in this document are designed to scale with the AA Crawler
 
 ### 15.2 Tooling Evolution
 
-| Sprint | Tooling Addition |
-|--------|-----------------|
+| Sprint | Engineering state |
+|--------|-------------------|
 | Sprint 2 | Completed configuration, runtime-path, observability, and bootstrap foundation |
 | Sprint 3 | Completed synchronous crawler, HTTP, robots, HTML, parser, and composition foundation |
-| Sprint 4 | Planned production evolution subject to backlog and ADR approval |
+| Sprint 4 | Implementation complete; architecture and documentation closure in progress |
 | Sprint 8 | Data validation schemas, pipeline test fixtures |
 | Sprint 9 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging |
 | Sprint 10 | Performance benchmarks, security scanning (`bandit`), dependency audit automation |
