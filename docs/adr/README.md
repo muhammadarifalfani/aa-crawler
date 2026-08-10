@@ -12,7 +12,7 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
-Current totals: 11 Accepted, 3 Proposed, 2 Deferred, and 0 Superseded.
+Current totals: 12 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 ## Numbering and filenames
 
@@ -40,7 +40,7 @@ that supersedes the historical record.
 | [ADR-011](0011-sprint-4-api-and-package-policy.md) | Sprint 4 public API and package policy | Accepted | Partially freeze mature APIs while crawler seams remain provisional | Public package facades | First platform crawler completion |
 | [ADR-013](0013-pydantic-dependency-classification.md) | Pydantic dependency classification | Accepted | Treat directly imported Pydantic as a strategic direct dependency | Configuration models and loader | Dependency metadata PR or Pydantic upgrade |
 | [ADR-014](0014-user-agent-ownership.md) | User-agent ownership | Accepted | Inject one immutable identity for robots evaluation, robots retrieval, and page retrieval | `identity/`, `robots/`, `html/` | Identity override, rotation, or alternate execution family |
-| [ADR-015](0015-retry-idempotency.md) | Retry idempotency | Proposed | Define retry eligibility for non-idempotent methods | `http/` | Before any non-GET request |
+| [ADR-015](0015-retry-idempotency.md) | Retry idempotency | Accepted | Retry only GET and HEAD; all other methods receive one transport attempt | `http/policies.py`, `http/client.py` | Non-GET/HEAD retries, idempotency keys, or alternate execution |
 | [ADR-016](0016-logging-redaction-scope.md) | Logging redaction scope | Proposed | Define guarantees across owned and unrelated handlers | `observability/` | Before sensitive platform logging |
 | [ADR-017](0017-metadata-portability.md) | Metadata portability | Deferred | Retain in-process mappings until portability is required | Crawler and HTML contracts | Persistence, plugins, queues, or workers |
 | [ADR-018](0018-error-root-taxonomy.md) | Error-root taxonomy | Deferred | Revisit independent configuration and crawler roots before stable API | Exception packages | Application supervision or version 1.0 |
