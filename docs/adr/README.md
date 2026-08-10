@@ -12,7 +12,7 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
-Current totals: 12 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+Current totals: 13 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 ## Numbering and filenames
 
@@ -45,3 +45,4 @@ that supersedes the historical record.
 | [ADR-017](0017-metadata-portability.md) | Metadata portability | Deferred | Retain in-process mappings until portability is required | Crawler and HTML contracts | Persistence, plugins, queues, or workers |
 | [ADR-018](0018-error-root-taxonomy.md) | Error-root taxonomy | Deferred | Revisit independent configuration and crawler roots before stable API | Exception packages | Application supervision or version 1.0 |
 | [ADR-019](0019-future-execution-families.md) | Future execution families | Proposed | Keep async/browser runtimes and heavy dependencies isolated | Future architecture | Alternate runtime approval |
+| [ADR-020](0020-declarative-source-architecture.md) | Declarative source architecture | Accepted | Resolve exact-host source profiles and compose generic parsers explicitly | `sources/`, `composition/`, `parser/` | External profiles, custom adapters, or richer governance |
