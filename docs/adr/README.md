@@ -12,7 +12,7 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
-Current totals: 14 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+Current totals: 15 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 ## Numbering and filenames
 
@@ -47,3 +47,4 @@ that supersedes the historical record.
 | [ADR-019](0019-future-execution-families.md) | Future execution families | Proposed | Keep async/browser runtimes and heavy dependencies isolated | Future architecture | Alternate runtime approval |
 | [ADR-020](0020-declarative-source-architecture.md) | Declarative source architecture | Accepted | Resolve exact-host source profiles and compose generic parsers explicitly | `sources/`, `composition/`, `parser/` | External profiles, custom adapters, or richer governance |
 | [ADR-021](0021-application-level-article-crawl-orchestration.md) | Application-level article crawl orchestration | Accepted | Coordinate source gates, HTML acquisition, parser composition, and crawler output | Planned `application/`; existing source, HTML, and parser APIs | Redirects, alternate execution, richer results, or lifecycle changes |
+| [ADR-022](0022-application-runtime-composition-and-resource-ownership.md) | Application runtime composition and resource ownership | Accepted | Build one synchronous runtime with explicit transport cleanup and a narrow service surface | Planned `application/runtime.py`; existing runtime collaborators | Alternate execution, resource graph, policy configuration, or public-service growth |
