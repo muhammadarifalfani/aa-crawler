@@ -167,9 +167,11 @@ def test_public_api_exports_article_crawl_service() -> None:
 
     assert application.__all__ == [
         "ApplicationError",
+        "ApplicationRuntime",
         "ArticleCrawlService",
         "SourceBoundaryError",
         "UnsupportedSourceError",
+        "create_application_runtime",
     ]
 
 
