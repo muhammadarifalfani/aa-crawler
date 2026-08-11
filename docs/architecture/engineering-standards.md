@@ -3,11 +3,11 @@
 | Field            | Value                                      |
 |------------------|--------------------------------------------|
 | **Project**      | AA Crawler                                 |
-| **Sprint**       | Living standard — aligned through Sprint 4 |
+| **Sprint**       | Living standard — aligned through implemented Sprint 5 scope |
 | **Task**         | Engineering Standards & Development Tooling |
 | **Status**       | Approved                                   |
 | **Author**       | Engineering Team                           |
-| **Last Updated** | 2026-08-10                                 |
+| **Last Updated** | 2026-08-11                                 |
 
 ---
 
@@ -116,7 +116,11 @@ Source code under `src/aa_crawler/` is organized by explicit responsibility:
 ```
 src/aa_crawler/
 ├── __init__.py
-├── bootstrap.py       # Explicit application composition root
+├── bootstrap.py       # Configuration, path, and logging bootstrap
+├── application/       # Use-case coordination and runtime composition
+│   ├── errors.py      # Narrow application error contracts
+│   ├── service.py     # Single-article crawl orchestration
+│   └── runtime.py     # Runtime graph and resource ownership
 ├── configuration/     # Settings, loading, and runtime paths
 ├── observability/     # Logging, context, and redaction
 ├── identity/          # Validated immutable request identity
@@ -184,8 +188,10 @@ boundary has one owner: `HttpClient` owns transport, `RobotsPolicy` owns robots
 decisions, `HtmlFetcher` owns HTML validation and decoding, `BaseParser` owns
 parser output validation, `BaseCrawler` owns the crawl template lifecycle,
 `SourceRegistry` owns source lookup, and `ParserComposer` owns parser
-construction. Service locators, mutable global registries, and implicit global
-dependency construction are prohibited.
+construction. `ArticleCrawlService` owns application-level coordination, while
+`ApplicationRuntime` and `create_application_runtime()` own runtime composition
+and resource lifetime. Service locators, mutable global registries, and implicit
+global dependency construction are prohibited.
 
 ### Synchronous crawler architecture
 
@@ -211,7 +217,7 @@ dependency construction are prohibited.
 
 ### Request identity
 
-- `RequestIdentity` is the immutable validated application-scoped identity.
+- `RequestIdentity` is the immutable validated runtime-scoped identity.
   Product, version, project URL, and optional contact remain distinct values.
 - One injected identity supplies the same User-Agent for robots retrieval,
   robots evaluation, and page retrieval through `RobotsPolicy` and
@@ -219,8 +225,9 @@ dependency construction are prohibited.
 - `HttpClient` remains identity-neutral. Acquisition components must not own
   duplicate raw User-Agent values.
 - Browser or third-party crawler impersonation and User-Agent rotation are not
-  permitted. Installed-version sourcing, operational contact policy, and any
-  approved CLI override remain future composition-root concerns.
+  permitted. The runtime composition root supplies the installed distribution
+  version from `importlib.metadata.version("aa-crawler")`. Operational contact
+  policy and any approved CLI override remain future concerns.
 
 ### Article and parser contracts
 
@@ -255,7 +262,13 @@ publisher-policy or legal review, rate limits, or operational safety controls.
 The current reference declarations enable CNN Indonesia and disable Kompas;
 these values are project governance state, not universal policy.
 
-The current Sprint 4 source-composition integration is:
+| Source | Exact hosts | Parser family | Adapter key | Enabled |
+|--------|-------------|---------------|-------------|---------|
+| CNN Indonesia | `www.cnnindonesia.com` | `jsonld_article` | `None` | Yes |
+| Kompas | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` | `jsonld_article` | `None` | No |
+
+The Sprint 4 source-composition integration remains a supported lower-level
+flow:
 
 ```text
 URL
@@ -268,36 +281,127 @@ URL
 ```
 
 It assumes an existing `HtmlDocument` and intentionally performs no live
-networking. Future application orchestration will coordinate source resolution,
-robots-aware acquisition, `HtmlDocument` creation, parser composition, and
-article output; that end-to-end runtime does not yet exist.
+networking.
+
+### Application orchestration
+
+`ArticleCrawlService` is the synchronous application boundary for crawling one
+article URL. It receives an exact `SourceRegistry`, `HtmlFetcher`, and
+`ParserComposer`; it does not construct or close those collaborators.
+
+Its implemented sequence is:
+
+```text
+requested URL
+  → enabled source lookup
+  → robots-aware HTML acquisition
+  → final URL lookup
+  → exact same-profile validation
+  → parser composition
+  → parsing
+  → tuple[CrawlerItem, ...]
+```
+
+The initial lookup occurs before acquisition. Malformed, non-HTTPS, unknown,
+and disabled sources raise `UnsupportedSourceError` before any acquisition.
+After acquisition, the final URL must resolve through the same authoritative
+registry to the exact originally selected `SourceProfile`. Transitions between
+the profile's declared exact hosts are allowed; a missing, disabled, or
+different final profile raises `SourceBoundaryError`. Parser construction
+occurs only after this gate. Parser order and zero-or-more cardinality are
+preserved in an eager immutable tuple.
+
+`SourceBoundaryError` governs registered source ownership, not canonical URL
+interpretation. `JsonLdArticleParser` and `ArticleItem` remain responsible for
+canonical semantics. Existing subsystem exceptions propagate without broad
+application wrapping.
+
+`ArticleCrawlService` forwards caller metadata to acquisition unchanged.
+Metadata does not control source selection, retry eligibility, identity,
+parser selection, or source governance. Automatic redirect following remains
+unimplemented.
+
+The application error hierarchy is:
+
+```text
+CrawlerError
+└── ApplicationError
+    ├── UnsupportedSourceError
+    └── SourceBoundaryError
+```
+
+These errors use concise deterministic messages and do not retain rejected
+URLs, source data, responses, or metadata.
+
+### Application runtime composition
+
+`create_application_runtime()` constructs one independent synchronous
+`ApplicationRuntime`. The frozen, slotted runtime exposes only
+`article_crawl_service` as its application service and provides explicit
+`close()` plus synchronous context-manager support. It is not a singleton,
+service locator, mutable registry, or global default runtime.
+
+The implemented construction order is:
+
+1. Resolve `importlib.metadata.version("aa-crawler")`.
+2. Construct one `RequestIdentity`.
+3. Construct `TimeoutPolicy` and `RetryPolicy`.
+4. Construct `SourceRegistry(DEFAULT_SOURCE_PROFILES)` and `ParserComposer`.
+5. Create and enter one `HttpClient` under a private `ExitStack`.
+6. Construct `RobotsPolicy` and `HtmlFetcher` with the same exact identity.
+7. Construct `ArticleCrawlService` with the runtime-local registry, fetcher,
+   and composer.
+8. Transfer cleanup ownership into `ApplicationRuntime`.
+
+`RequestIdentity` is not injected into `HttpClient`. Exactly one runtime owns
+each created client; `RobotsPolicy`, `HtmlFetcher`, and `ArticleCrawlService`
+use but do not close it. Context exit and explicit close release owned
+resources, repeated close is harmless, and failure after client acquisition
+closes the client while preserving the original construction exception. A
+partially built runtime does not escape.
+
+Every runtime receives fresh identity, transport, robots policy, fetcher,
+registry, composer, and service instances. Immutable profile declarations may
+be reused as constructor input, but mutable runtime state is not shared.
+
+`bootstrap_application()` and `create_application_runtime()` remain separate.
+The former returns `ApplicationSettings` after configuration, path, and logging
+startup; the latter accepts no settings and owns the synchronous network
+runtime graph. Neither implicitly calls the other.
 
 Actual dependency direction remains explicit: neutral crawler and article
 contracts support transport and parsing; robots and HTML acquisition depend on
 HTTP and request identity; parsing consumes HTML contracts; source profiles are
-declarative; and composition depends on sources and parsers. Future application
-orchestration may coordinate these boundaries but must not create circular
-ownership.
+declarative; composition depends on sources and parsers; and the application
+layer coordinates those public boundaries without creating circular ownership.
 
 Crawler package boundaries, contract fields, source/composition seams, and
 Sprint 3–4 public APIs remain partially provisional under
 [ADR-011](../adr/0011-sprint-4-api-and-package-policy.md). Mature Sprint 2
 configuration and primary observability APIs remain frozen.
 
-ADR-014 (user-agent ownership), ADR-015 (retry idempotency), and ADR-020
-(declarative source architecture) are Accepted and implemented. ADR-016
-(logging-redaction scope) and ADR-019 (future execution families) remain
-Proposed. ADR-017 (metadata portability) and ADR-018 (error-root taxonomy)
-remain Deferred. Async execution, browser automation, dynamic plugins,
-distributed crawling, metrics, tracing, storage, scheduling, and live profile
-reload remain future or conditional work.
+ADR-014 (user-agent ownership), ADR-015 (retry idempotency), ADR-020
+(declarative source architecture), ADR-021 (application-level article crawl
+orchestration), and ADR-022 (application runtime composition and resource
+ownership) are Accepted and implemented. ADR-016 (logging-redaction scope) and
+ADR-019 (future execution families) remain Proposed. ADR-017 (metadata
+portability) and ADR-018 (error-root taxonomy) remain Deferred. Current totals
+are 15 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+
+Async execution, browser automation, dynamic plugins, distributed crawling,
+workers, queues, metrics, tracing, persistence, scheduling, thread-safety
+guarantees, automatic redirects, and live profile reload remain unimplemented
+or conditional future work.
 
 ### Public API discipline
 
 - Package `__all__` declarations define intentional public surfaces.
 - Source and composition APIs remain minimal and responsibility-specific.
+- The `aa_crawler.application` public surface is exactly `ApplicationError`,
+  `ApplicationRuntime`, `ArticleCrawlService`, `SourceBoundaryError`,
+  `UnsupportedSourceError`, and `create_application_runtime`.
 - Do not introduce premature compatibility aliases, mutable global registries,
-  or convenience orchestration methods before runtime ownership is approved.
+  service locators, or unapproved convenience orchestration methods.
 
 ---
 
@@ -506,10 +610,10 @@ All application environment variables use the `AA_` prefix:
 
 Future application proxy settings use `AA_HTTP_PROXY` and `AA_HTTPS_PROXY`. Unprefixed `HTTP_PROXY` and `HTTPS_PROXY` are not AA Crawler settings; HTTP clients receive validated proxy settings explicitly.
 
-### 9.3 Runtime Paths and Bootstrap
+### 9.3 Runtime Paths and Configuration Bootstrap
 
-`bootstrap_application()` is the explicit application composition root. Its
-startup order is:
+`bootstrap_application()` is the explicit configuration, path, and logging
+bootstrap. Its startup order is:
 
 ```text
 load_settings
@@ -526,6 +630,11 @@ prepares `data_dir` and `temp_dir`, prepares `log_dir` only when file logging is
 enabled, and never creates `config_dir`. The same frozen settings instance is
 passed through directory preparation and logging configuration. Imports must
 not load settings, create directories, configure logging, or cache settings.
+
+The bootstrap returns that `ApplicationSettings` instance. It does not create
+or own `HttpClient`, `RobotsPolicy`, `HtmlFetcher`, `SourceRegistry`,
+`ParserComposer`, `ArticleCrawlService`, or `ApplicationRuntime`. Runtime graph
+composition and cleanup belong separately to `create_application_runtime()`.
 
 ### 9.4 Environment Separation
 
@@ -611,6 +720,7 @@ the root logger.
 
 ```
 aa_crawler                          # Root application logger
+├── aa_crawler.application           # Use-case and runtime composition
 ├── aa_crawler.configuration       # Settings and runtime paths
 ├── aa_crawler.observability       # Logging context and redaction
 ├── aa_crawler.identity            # Request identity
@@ -636,6 +746,7 @@ aa_crawler                          # Root application logger
 
 ```
 tests/
+├── application/             # Error, service, and runtime unit tests
 ├── configuration/           # Package-focused unit tests
 ├── crawler/                 # Domain and lifecycle tests
 ├── http/                    # Transport-policy tests with mock transport
@@ -661,13 +772,22 @@ Test files mirror the `src/aa_crawler/` module structure.
 
 Tests cover configuration, paths, observability, identity, crawler contracts,
 HTTP policy, robots, HTML acquisition, article contracts, parsing, source
-lookup, parser composition, and bootstrap integration. Tests must isolate
-environment variables, logging and correlation state, and filesystem writes;
-use `tmp_path` for runtime paths.
+lookup, parser composition, application errors and orchestration, runtime
+composition, and bootstrap integration. Tests must isolate environment
+variables, logging and correlation state, and filesystem writes; use `tmp_path`
+for runtime paths.
 
 Sprint 4 integration tests use synthetic HTML to exercise source resolution and
 parser composition. They assume document acquisition and intentionally do not
 instantiate live networking components.
+
+Sprint 5 adds application crawl and runtime composition integration tests.
+These remain synthetic and network-isolated while verifying real package
+boundaries. Durable coverage includes source gates, metadata forwarding,
+runtime construction order, installed-version ordering, identity reuse,
+context and explicit cleanup, repeated close, partial-construction cleanup,
+runtime independence, and bootstrap separation. Documentation must describe
+these architecture facts rather than transient test counts.
 
 ### 11.4 Coverage Targets
 
@@ -811,7 +931,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 |-------------------|-------------------|
 | **Query Management** | Typed interfaces and validated configuration foundation |
 | **Query Engine** | Composable query builder; typed query models; unit-tested parsing and validation |
-| **Crawler framework** | Synchronous contracts and constructor-injected lifecycle boundaries |
+| **Crawler framework** | Synchronous contracts, application orchestration, and explicitly owned runtime lifecycle |
 | **Scheduler** | Logging of job lifecycle events; testable with mocked clock |
 | **Data Pipeline** | Stage-level logging; unit + integration test categories |
 | **Storage Layer** | Abstract interface; integration tests against local/test storage |
@@ -825,7 +945,8 @@ The standards defined in this document are designed to scale with the AA Crawler
 |--------|-------------------|
 | Sprint 2 | Completed configuration, runtime-path, observability, and bootstrap foundation |
 | Sprint 3 | Completed synchronous crawler, HTTP, robots, HTML, parser, and composition foundation |
-| Sprint 4 | Implementation complete; architecture and documentation closure in progress |
+| Sprint 4 | Completed identity, retry safety, article parsing, declarative sources, and documentation closure |
+| Sprint 5 | Application orchestration and runtime composition implemented; documentation closure and final verification in progress |
 | Sprint 8 | Data validation schemas, pipeline test fixtures |
 | Sprint 9 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging |
 | Sprint 10 | Performance benchmarks, security scanning (`bandit`), dependency audit automation |
