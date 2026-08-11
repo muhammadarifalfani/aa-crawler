@@ -15,12 +15,14 @@ from aa_crawler.robots import RobotsError
 from aa_crawler.sources import SourceRegistryError
 
 
-def test_public_api_contains_only_application_errors() -> None:
+def test_public_api_contains_only_approved_application_symbols() -> None:
     assert application.__all__ == [
         "ApplicationError",
+        "ApplicationRuntime",
         "ArticleCrawlService",
         "SourceBoundaryError",
         "UnsupportedSourceError",
+        "create_application_runtime",
     ]
 
 
