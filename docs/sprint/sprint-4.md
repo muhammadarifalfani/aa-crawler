@@ -300,3 +300,32 @@ integration and observability hardening may also be considered.
 Sprint 4 is ready for final verification. Formal closure occurs only after
 this completion report is merged, the full repository quality gate passes on
 the final state, and `main` is synchronized cleanly.
+
+## 18. Subsequent Resolution
+
+This annotation was added later during Sprint 5 documentation alignment. It
+does not change the point-in-time Sprint 4 implementation record or the
+original closure checklist above.
+
+After this report was written, its completion-report pull request was merged,
+local `main` was synchronized cleanly with `origin/main`, and final repository
+verification passed. The completion-time quality gate included Ruff linting,
+Ruff formatting, mypy, pytest, coverage above the configured threshold,
+lockfile consistency, and pre-commit; the synchronized working tree remained
+clean. The remaining unchecked closure items were therefore subsequently
+satisfied, and Sprint 4 was formally closed.
+
+Sprint 5 then built on, rather than retroactively extending, the Sprint 4
+foundation. [ADR-021](../adr/0021-application-level-article-crawl-orchestration.md)
+was accepted, `aa_crawler.application` and `ArticleCrawlService` were
+introduced, pre- and post-acquisition source gates were implemented, and the
+cross-package application flow was verified with network-isolated integration
+tests.
+
+[ADR-022](../adr/0022-application-runtime-composition-and-resource-ownership.md)
+was subsequently accepted to define runtime composition and resource
+ownership. Sprint 5 implemented `ApplicationRuntime` and
+`create_application_runtime()`, made `HttpClient` lifecycle ownership explicit,
+and verified runtime composition and failure-safe cleanup through integration
+tests. These are Sprint 5 outcomes built on Sprint 4 foundations; they were not
+part of the Sprint 4 implementation inventory or decisions.
