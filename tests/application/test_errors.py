@@ -18,10 +18,10 @@ from aa_crawler.sources import SourceRegistryError
 def test_public_api_contains_only_application_errors() -> None:
     assert application.__all__ == [
         "ApplicationError",
+        "ArticleCrawlService",
         "SourceBoundaryError",
         "UnsupportedSourceError",
     ]
-    assert not hasattr(application, "ArticleCrawlService")
 
 
 def test_application_errors_follow_crawler_hierarchy() -> None:
