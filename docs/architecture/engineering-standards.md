@@ -3,11 +3,11 @@
 | Field            | Value                                      |
 |------------------|--------------------------------------------|
 | **Project**      | AA Crawler                                 |
-| **Sprint**       | Living standard — aligned through implemented Sprint 5 scope |
+| **Sprint**       | Living standard — aligned through implemented Sprint 6 CLI scope |
 | **Task**         | Engineering Standards & Development Tooling |
 | **Status**       | Approved                                   |
 | **Author**       | Engineering Team                           |
-| **Last Updated** | 2026-08-11                                 |
+| **Last Updated** | 2026-08-16                                 |
 
 ---
 
@@ -121,6 +121,9 @@ src/aa_crawler/
 │   ├── errors.py      # Narrow application error contracts
 │   ├── service.py     # Single-article crawl orchestration
 │   └── runtime.py     # Runtime graph and resource ownership
+├── cli/               # Synchronous process boundary around the application runtime
+│   ├── __init__.py    # Argument parsing and public main()
+│   └── app.py         # Bootstrap → runtime → crawl → exit-code mapping
 ├── configuration/     # Settings, loading, and runtime paths
 ├── observability/     # Logging, context, and redaction
 ├── identity/          # Validated immutable request identity
@@ -382,16 +385,92 @@ configuration and primary observability APIs remain frozen.
 
 ADR-014 (user-agent ownership), ADR-015 (retry idempotency), ADR-020
 (declarative source architecture), ADR-021 (application-level article crawl
-orchestration), and ADR-022 (application runtime composition and resource
-ownership) are Accepted and implemented. ADR-016 (logging-redaction scope) and
+orchestration), ADR-022 (application runtime composition and resource
+ownership), and ADR-023 (CLI application entry point and process boundary)
+are Accepted and implemented. ADR-016 (logging-redaction scope) and
 ADR-019 (future execution families) remain Proposed. ADR-017 (metadata
 portability) and ADR-018 (error-root taxonomy) remain Deferred. Current totals
-are 15 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+are 16 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 Async execution, browser automation, dynamic plugins, distributed crawling,
 workers, queues, metrics, tracing, persistence, scheduling, thread-safety
 guarantees, automatic redirects, and live profile reload remain unimplemented
 or conditional future work.
+
+### Operational CLI process boundary
+
+`aa_crawler.cli` is a thin synchronous process boundary implementing
+ADR-023 around the existing application and runtime layers. It owns:
+
+- argument parsing, using standard-library `argparse` only (no new
+  runtime dependency);
+- invoking `bootstrap_application()` and `create_application_runtime()` in
+  sequence;
+- serializing the single successful `ArticleCrawlService.crawl()` result;
+- stdout/log channel separation; and
+- a small, CLI-local exit-code translation.
+
+It explicitly does not own HTTP execution, robots decisions, retry
+eligibility, source governance, parser selection, application orchestration,
+or runtime resources — every one of those responsibilities remains with its
+existing owner. The implemented flow is:
+
+```text
+process
+  → aa_crawler:main
+  → aa_crawler.cli
+  → bootstrap_application()
+  → create_application_runtime()
+  → ApplicationRuntime
+  → ArticleCrawlService.crawl()
+  → serialization
+  → stdout / exit code
+```
+
+The top-level `aa_crawler.main()` is a direct delegation to
+`aa_crawler.cli.main`; it contains no argument-parsing, runtime construction,
+orchestration, exception-taxonomy, or serialization logic of its own. The
+`aa_crawler.cli` public surface is exactly `main`; internal helpers remain
+unexported.
+
+#### Exit-code semantics
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Unexpected or unmapped failure |
+| `2` | Unsupported or disabled source (`UnsupportedSourceError`) |
+| `3` | Other crawl-domain failure (any other `CrawlerError` subtype) |
+| `4` | Configuration/startup failure (`AACrawlerError`/`ConfigurationError`) |
+
+This mapping is CLI-local only. It introduces no universal project error
+taxonomy, does not alter the existing exception hierarchy, and does not
+resolve ADR-018 (error-root taxonomy), which remains Deferred.
+
+#### stdout, logging, and correlation context
+
+Crawl result data is the only content ever written to stdout; all
+lifecycle and failure logging goes through the existing `aa_crawler` logger
+hierarchy, which defaults to stderr. The CLI logs conservative failure
+categories only — never raw exception detail, headers, cookies, response
+bodies, or raw metadata — and is not required to log the raw requested URL.
+ADR-016 (logging redaction scope) remains Proposed; this document does not
+claim a repository-wide redaction guarantee.
+
+One correlation context, from the existing `observability.correlation_context`
+API, scopes each CLI invocation; reset and non-leakage across consecutive
+invocations are verified by tests. The internal correlation-identifier shape
+is not a public API and must not be relied upon by callers.
+
+#### Runtime lifecycle
+
+The CLI uses `create_application_runtime()` only as a context manager
+(`with create_application_runtime() as runtime: ...`) and never constructs
+`HttpClient`, `SourceRegistry`, or a parser directly, and never calls
+`ArticleCrawlService.crawl()`'s collaborators itself. Cleanup on success,
+on a known governance rejection, and on an unexpected failure after runtime
+creation is owned entirely by `ApplicationRuntime`/ADR-022; the CLI performs
+no secondary cleanup of resources it does not own.
 
 ### Public API discipline
 
@@ -400,6 +479,9 @@ or conditional future work.
 - The `aa_crawler.application` public surface is exactly `ApplicationError`,
   `ApplicationRuntime`, `ArticleCrawlService`, `SourceBoundaryError`,
   `UnsupportedSourceError`, and `create_application_runtime`.
+- The `aa_crawler.cli` public surface is exactly `main`; the top-level
+  `aa_crawler.main` is that same object, re-exported as a compatibility
+  entry point for the `aa-crawler` console script.
 - Do not introduce premature compatibility aliases, mutable global registries,
   service locators, or unapproved convenience orchestration methods.
 
@@ -757,6 +839,7 @@ tests/
 ├── parser/                  # Parser lifecycle and synthetic metadata tests
 ├── sources/                 # Profile and exact-registry tests
 ├── composition/             # Parser-construction tests
+├── cli/                     # Argument-parsing and exit-code-mapping tests
 └── integration/             # Cross-package synthetic integration tests
 ```
 
@@ -788,6 +871,19 @@ runtime construction order, installed-version ordering, identity reuse,
 context and explicit cleanup, repeated close, partial-construction cleanup,
 runtime independence, and bootstrap separation. Documentation must describe
 these architecture facts rather than transient test counts.
+
+Sprint 6 adds CLI unit tests and CLI process-boundary integration tests.
+CLI unit tests cover argument parsing and the CLI-local exit-code mapping
+against fully faked bootstrap/runtime collaborators. CLI process-boundary
+integration tests exercise the real top-level entry point, real
+`bootstrap_application()`, and the real cross-package runtime graph (source
+registry, parser composer, parser, contracts), fake or network-guard only
+the acquisition leaf or a specific failure boundary, and never contact a
+real network. Durable coverage includes stdout/log channel separation, the
+requested/canonical URL distinction, runtime cleanup across success and
+failure paths, and correlation-context isolation across invocations. As
+above, documentation must describe these architecture facts rather than
+transient test counts.
 
 ### 11.4 Coverage Targets
 
@@ -946,7 +1042,8 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 2 | Completed configuration, runtime-path, observability, and bootstrap foundation |
 | Sprint 3 | Completed synchronous crawler, HTTP, robots, HTML, parser, and composition foundation |
 | Sprint 4 | Completed identity, retry safety, article parsing, declarative sources, and documentation closure |
-| Sprint 5 | Application orchestration and runtime composition implemented; documentation closure and final verification in progress |
+| Sprint 5 | Application orchestration and runtime composition completed |
+| Sprint 6 | Operational CLI process boundary: ADR-023 accepted, CLI implemented, integration verification complete; documentation alignment in progress |
 | Sprint 8 | Data validation schemas, pipeline test fixtures |
 | Sprint 9 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging |
 | Sprint 10 | Performance benchmarks, security scanning (`bandit`), dependency audit automation |

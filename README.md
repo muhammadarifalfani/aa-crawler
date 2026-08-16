@@ -11,9 +11,11 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprint 4 is complete. Sprint 5 implementation is complete
-for its current scope; documentation closure and final verification remain in
-progress.
+**Current status:** Sprint 5 is complete and closed. Sprint 6 (an operational
+CLI process boundary) has an Accepted architecture decision (ADR-023), a
+complete CLI implementation, and complete integration verification;
+documentation alignment is in progress and Sprint 6 is not yet formally
+closed.
 
 ## Current capabilities
 
@@ -30,6 +32,10 @@ progress.
 - Synthetic, network-isolated application and runtime integration tests
 - Frozen, environment-first application settings and deterministic paths
 - Standard-library logging with correlation context and sensitive-data redaction
+- An operational synchronous CLI (`aa-crawler <url>`) around the existing
+  application runtime, with one JSON object on stdout and CLI-local exit codes
+- Network-isolated CLI process-boundary integration verification exercising
+  real bootstrap, runtime, source, and parser components
 
 ## Current limitations
 
@@ -41,6 +47,10 @@ progress.
 - No persistence, worker, queue, scheduler, distributed execution, asynchronous
   runtime, browser rendering, or live profile reload exists.
 - The synchronous runtime provides no thread-safety guarantee.
+- The CLI accepts exactly one URL per invocation: no batch input, no file or
+  stdin input, and no JSON Lines output.
+- The CLI has no flag that overrides source, robots, retry, identity, or
+  parser behavior; it cannot bypass source governance.
 
 ## Architecture overview
 
@@ -60,6 +70,7 @@ The major packages each own a narrow responsibility:
 | `sources` | Declarative profiles and exact-host lookup |
 | `composition` | Explicit source-to-parser construction |
 | `application` | Article crawl coordination, application errors, and runtime ownership |
+| `cli` | Synchronous process boundary: argument parsing, bootstrap/runtime invocation, serialization, and exit-code translation |
 
 The current application-level flow is:
 
@@ -107,6 +118,71 @@ There is no global runtime, singleton, or service locator.
 The application package intentionally exports only `ApplicationError`,
 `ApplicationRuntime`, `ArticleCrawlService`, `SourceBoundaryError`,
 `UnsupportedSourceError`, and `create_application_runtime`.
+
+### Operational CLI
+
+The `aa-crawler` console script (declared as `aa_crawler:main`) is a thin,
+synchronous process boundary around the application runtime described above.
+It accepts exactly one positional URL, parsed with the standard-library
+`argparse`, and follows the sequence:
+
+```text
+process
+  → aa_crawler:main
+  → aa_crawler.cli
+  → bootstrap_application()
+  → create_application_runtime()
+  → ApplicationRuntime
+  → ArticleCrawlService.crawl()
+  → serialization
+  → stdout / process exit
+```
+
+On success, it prints exactly one JSON object to stdout and exits `0`.
+Lifecycle and failure logging use the existing logger hierarchy and never
+reach stdout. Known failures translate to a small, CLI-local, deterministic
+exit-code mapping (see below); this mapping does not replace or extend the
+internal exception hierarchy, and no new runtime dependency was introduced —
+argument parsing, serialization, and correlation-ID generation use only the
+standard library (`argparse`, `json`, `uuid`).
+
+#### CLI usage
+
+```bash
+aa-crawler https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/example-story
+```
+
+The CLI takes exactly one positional URL per invocation. There are no
+subcommands and no flags that override source, robots, retry, identity, or
+parser behavior.
+
+#### Output contract
+
+A successful invocation prints one JSON object containing the current
+shipped article fields:
+
+`source`, `source_domain`, `requested_url`, `canonical_url`, `headline`,
+`published_at`, `description`, `author_names`, `modified_at`, `section`,
+`lead_image_url`, `language`.
+
+`requested_url` preserves the exact URL supplied to the CLI; `canonical_url`
+preserves the parser-derived canonical URL independently. This output
+contract reflects the currently shipped `jsonld_article` parser family only;
+it does not promise a stable serialization for hypothetical future parser
+families.
+
+#### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Unexpected or unmapped failure |
+| `2` | Unsupported or disabled source |
+| `3` | Crawl-domain failure (acquisition, robots, source-boundary, or parsing) |
+| `4` | Configuration or startup failure |
+
+These are CLI-local process-boundary semantics only. They do not introduce
+or replace a project-wide exception hierarchy or error taxonomy.
 
 ### Request identity
 
@@ -203,6 +279,9 @@ aa_crawler/
 │   │   ├── errors.py               # Application boundary errors
 │   │   ├── service.py              # Article crawl orchestration
 │   │   └── runtime.py              # Runtime graph and resource ownership
+│   ├── cli/
+│   │   ├── __init__.py             # Argument parsing and public main()
+│   │   └── app.py                  # Bootstrap → runtime → crawl → exit-code mapping
 │   └── bootstrap.py                # Configuration, paths, and logging startup
 ├── tests/                          # Mirrored automated test suite
 ├── pyproject.toml                  # Project metadata and dependencies
@@ -218,6 +297,11 @@ uv sync
 ```
 
 ## Application bootstrap
+
+The `aa-crawler` command-line entry point (see
+[Operational CLI](#operational-cli) above) already wires both boundaries
+below together for a single crawl invocation. Library callers compose them
+explicitly instead.
 
 Startup is explicit and uses the public bootstrap API:
 
@@ -304,6 +388,12 @@ and pre-commit runs the integrated checks. Application unit tests, article-crawl
 integration tests, and runtime-composition integration tests use synthetic,
 network-isolated boundaries. They verify source gates, cleanup after normal and
 failed construction, runtime independence, and bootstrap/runtime separation.
+CLI unit tests cover argument parsing and exit-code translation; CLI
+process-boundary integration tests exercise real bootstrap, runtime, source,
+and parser components behind synthetic or network-guarded acquisition, and
+verify stdout/log channel separation, the requested/canonical URL
+distinction, runtime cleanup, and correlation-context isolation across
+invocations.
 
 ## Roadmap
 
@@ -313,12 +403,13 @@ failed construction, runtime independence, and bootstrap/runtime separation.
 | **Sprint 2** | Configuration, runtime paths, observability, and bootstrap | **Completed** |
 | **Sprint 3** | Synchronous crawler, HTTP, robots, HTML, and parser foundation | **Completed** |
 | **Sprint 4** | Identity, retry safety, article parsing, and declarative sources | **Completed** |
-| **Sprint 5** | Application orchestration and runtime resource ownership | **Implementation complete; documentation closure in progress** |
+| **Sprint 5** | Application orchestration and runtime resource ownership | **Completed** |
+| **Sprint 6** | Operational CLI process boundary | **ADR-023 accepted; CLI implemented; integration verification complete; documentation alignment in progress** |
 
-Possible future directions include separately approved redirect architecture,
-broader reviewed sources, alternate execution families under ADR-019,
-persistence or worker/queue concerns, and evidence-driven adapter extensibility.
-These are provisional directions, not committed scope.
+Possible future directions remain provisional, not committed scope: separately
+approved redirect architecture, broader reviewed sources, alternate execution
+families under ADR-019, persistence, worker/queue/scheduler concerns,
+observability hardening, and evidence-driven adapter extensibility.
 
 ## Documentation
 
@@ -329,6 +420,7 @@ These are provisional directions, not committed scope.
 - [ADR-020: Declarative Source Architecture](docs/adr/0020-declarative-source-architecture.md)
 - [ADR-021: Application-Level Article Crawl Orchestration](docs/adr/0021-application-level-article-crawl-orchestration.md)
 - [ADR-022: Application Runtime Composition and Resource Ownership](docs/adr/0022-application-runtime-composition-and-resource-ownership.md)
+- [ADR-023: CLI Application Entry Point and Process Boundary](docs/adr/0023-cli-application-entry-point-and-process-boundary.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 
