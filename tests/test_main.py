@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from aa_crawler import main
-
-if TYPE_CHECKING:
-    from pytest import CaptureFixture
+from aa_crawler.cli import main as cli_main
 
 
-def test_main_prints_greeting(capsys: CaptureFixture[str]) -> None:
-    main()
-
-    captured = capsys.readouterr()
-
-    assert captured.out == "Hello from aa-crawler!\n"
+def test_main_delegates_to_cli_entry_point() -> None:
+    assert main is cli_main
