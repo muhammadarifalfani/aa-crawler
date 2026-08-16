@@ -12,7 +12,7 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
-Current totals: 15 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+Current totals: 16 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 ## Numbering and filenames
 
@@ -48,3 +48,4 @@ that supersedes the historical record.
 | [ADR-020](0020-declarative-source-architecture.md) | Declarative source architecture | Accepted | Resolve exact-host source profiles and compose generic parsers explicitly | `sources/`, `composition/`, `parser/` | External profiles, custom adapters, or richer governance |
 | [ADR-021](0021-application-level-article-crawl-orchestration.md) | Application-level article crawl orchestration | Accepted | Coordinate source gates, HTML acquisition, parser composition, and crawler output | `application/service.py`, `application/errors.py` | Redirects, alternate execution, richer results, or lifecycle changes |
 | [ADR-022](0022-application-runtime-composition-and-resource-ownership.md) | Application runtime composition and resource ownership | Accepted | Build one synchronous runtime with explicit transport cleanup and a narrow service surface | `application/runtime.py` | Alternate execution, resource graph, policy configuration, or public-service growth |
+| [ADR-023](0023-cli-application-entry-point-and-process-boundary.md) | CLI application entry point and process boundary | Accepted | Build one thin synchronous CLI around the existing application runtime with a narrow exit-code translation | `cli/` | Batch input, new CLI dependency, new exit-code category, or redirect/persistence/alternate-runtime CLI exposure |
