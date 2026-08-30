@@ -1043,7 +1043,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 3 | Completed synchronous crawler, HTTP, robots, HTML, parser, and composition foundation |
 | Sprint 4 | Completed identity, retry safety, article parsing, declarative sources, and documentation closure |
 | Sprint 5 | Application orchestration and runtime composition completed |
-| Sprint 6 | Operational CLI process boundary: ADR-023 accepted, CLI implemented, integration verification complete; documentation alignment in progress |
+| Sprint 6 | Operational CLI process boundary completed: ADR-023 accepted, CLI implemented, integration verification complete, documentation aligned |
 | Sprint 8 | Data validation schemas, pipeline test fixtures |
 | Sprint 9 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging |
 | Sprint 10 | Performance benchmarks, security scanning (`bandit`), dependency audit automation |

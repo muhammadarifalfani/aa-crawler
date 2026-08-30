@@ -12,10 +12,10 @@ article composition with application-level orchestration and explicit runtime
 resource ownership.
 
 **Current status:** Sprint 5 is complete and closed. Sprint 6 (an operational
-CLI process boundary) has an Accepted architecture decision (ADR-023), a
-complete CLI implementation, and complete integration verification;
-documentation alignment is in progress and Sprint 6 is not yet formally
-closed.
+CLI process boundary) is complete and formally closed: ADR-023 is Accepted,
+the CLI is implemented, process-boundary integration verification is
+complete, documentation is aligned, and the final repository-wide
+verification passed.
 
 ## Current capabilities
 
@@ -404,7 +404,7 @@ invocations.
 | **Sprint 3** | Synchronous crawler, HTTP, robots, HTML, and parser foundation | **Completed** |
 | **Sprint 4** | Identity, retry safety, article parsing, and declarative sources | **Completed** |
 | **Sprint 5** | Application orchestration and runtime resource ownership | **Completed** |
-| **Sprint 6** | Operational CLI process boundary | **ADR-023 accepted; CLI implemented; integration verification complete; documentation alignment in progress** |
+| **Sprint 6** | Operational CLI process boundary | **Completed** |
 
 Possible future directions remain provisional, not committed scope: separately
 approved redirect architecture, broader reviewed sources, alternate execution

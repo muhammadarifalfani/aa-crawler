@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 6 implementation is complete. Process-boundary integration verification
-is complete. Documentation alignment is complete. This completion report has
-been created.
+is complete. Documentation alignment is complete. This completion report was
+merged, local `main` was subsequently synchronized cleanly with
+`origin/main`, and the final repository-wide verification (Section 17) passed
+on that merged state with no Critical or Major findings.
 
-Formal closure must not be declared until this report is merged, the final
-repository quality gate passes on the merged state, and local `main` is
-synchronized cleanly with `origin/main`.
+**Sprint 6 is formally closed.**
 
 ## 2. Objective
 
@@ -220,9 +220,19 @@ The repository verification strategy uses:
 - `uv --cache-dir .uv-cache run pre-commit run --all-files`
 
 Sprint 6 implementation, integration-verification, and documentation tasks
-passed their applicable focused and repository-wide gates. Final verification
-on the merged completion state remains a closure requirement and is
-intentionally unchecked below.
+passed their applicable focused and repository-wide gates throughout. The
+final repository-wide verification, run on the merged completion state
+(`8597e7c645dd7a4c08052701641dfb48a4a0193f`), confirmed:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 715 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 94.99%, against the configured 70% threshold
+- `uv lock --check`: passed
+- pre-commit: all hooks passed
+- Critical findings: 0
+- Major findings: 0
 
 ## 18. Security and safety properties
 
@@ -313,6 +323,7 @@ report does not revise or reopen the Sprint 5 completion record.
 - PR #52 — `aa_crawler.cli` implementation and top-level delegation
 - PR #53 — CLI process-boundary integration verification
 - PR #54 — README, Engineering Standards, and ADR index alignment
+- PR #55 — Sprint 6 completion report
 
 ## 24. Sprint 6 closure checklist
 
@@ -329,10 +340,10 @@ report does not revise or reopen the Sprint 5 completion record.
 - [x] Engineering Standards aligned
 - [x] ADR index implementation reference aligned
 - [x] Sprint 6 completion report created
-- [ ] Sprint 6 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 6 formally closed
+- [x] Sprint 6 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 6 formally closed
 
 ## 25. Provisional post-Sprint-6 direction
 
@@ -345,6 +356,9 @@ architecture approval before implementation.
 
 ## 26. Completion statement
 
-Sprint 6 is ready for completion-report review. Formal closure occurs only
-after this report is merged, the full repository quality gate passes on the
-merged state, and local `main` is synchronized cleanly with `origin/main`.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `8597e7c645dd7a4c08052701641dfb48a4a0193f`, and the final
+repository-wide quality gate passed on that merged state with no Critical or
+Major findings.
+
+**Sprint 6 is formally closed.**
