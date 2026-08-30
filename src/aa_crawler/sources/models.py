@@ -13,6 +13,7 @@ _HOST_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _MAX_IDENTIFIER_LENGTH = 64
 _PARSER_FAMILY = "jsonld_article"
 _GENERIC_JSON_ARTICLE_PARSER_FAMILY = "generic_json_article"
+_MICRODATA_ARTICLE_PARSER_FAMILY = "microdata_article"
 _LOCAL_HOST_SUFFIXES = (".home", ".internal", ".lan", ".local", ".localhost")
 
 
@@ -108,7 +109,11 @@ class SourceProfile:
     enabled: bool = True
 
     supported_parser_families: ClassVar[frozenset[str]] = frozenset(
-        {_PARSER_FAMILY, _GENERIC_JSON_ARTICLE_PARSER_FAMILY}
+        {
+            _PARSER_FAMILY,
+            _GENERIC_JSON_ARTICLE_PARSER_FAMILY,
+            _MICRODATA_ARTICLE_PARSER_FAMILY,
+        }
     )
 
     def __post_init__(self) -> None:

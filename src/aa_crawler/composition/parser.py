@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from aa_crawler.composition.errors import ParserCompositionError
-from aa_crawler.parser import GenericJsonArticleParser, JsonLdArticleParser
+from aa_crawler.parser import (
+    GenericJsonArticleParser,
+    JsonLdArticleParser,
+    MicrodataArticleParser,
+)
 from aa_crawler.sources import SourceProfile
 
 if TYPE_CHECKING:
@@ -32,6 +36,11 @@ class ParserComposer:
             )
         if profile.parser_family == "generic_json_article":
             return GenericJsonArticleParser(
+                source=profile.source,
+                source_domains=profile.domains,
+            )
+        if profile.parser_family == "microdata_article":
+            return MicrodataArticleParser(
                 source=profile.source,
                 source_domains=profile.domains,
             )
