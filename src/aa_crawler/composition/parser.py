@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from aa_crawler.composition.errors import ParserCompositionError
-from aa_crawler.parser import JsonLdArticleParser
+from aa_crawler.parser import GenericJsonArticleParser, JsonLdArticleParser
 from aa_crawler.sources import SourceProfile
 
 if TYPE_CHECKING:
@@ -27,6 +27,11 @@ class ParserComposer:
             raise ParserCompositionError("source adapters are not supported")
         if profile.parser_family == "jsonld_article":
             return JsonLdArticleParser(
+                source=profile.source,
+                source_domains=profile.domains,
+            )
+        if profile.parser_family == "generic_json_article":
+            return GenericJsonArticleParser(
                 source=profile.source,
                 source_domains=profile.domains,
             )
