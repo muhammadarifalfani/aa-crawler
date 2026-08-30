@@ -257,6 +257,10 @@ global dependency construction are prohibited.
 - Ordinary compatible sources are added profile-first and reuse the generic
   parser. A publisher-specific parser or adapter requires observed evidence;
   non-null adapter keys remain unsupported.
+- Two parser families exist under ADR-025: `jsonld_article` (both current
+  reference profiles) and `generic_json_article`, a synthetic
+  proof-of-concept family exercised only through in-test fixtures. No
+  production profile uses the second family.
 
 Profile existence does not authorize network crawling. `enabled=True` makes a
 source available to normal lookup; `enabled=False` retains known state while
@@ -386,22 +390,29 @@ configuration and primary observability APIs remain frozen.
 ADR-014 (user-agent ownership), ADR-015 (retry idempotency), ADR-020
 (declarative source architecture), ADR-021 (application-level article crawl
 orchestration), ADR-022 (application runtime composition and resource
-ownership), ADR-023 (CLI application entry point and process boundary), and
-ADR-024 (application-level persistence boundary for crawl results) are
-Accepted and implemented. ADR-016 (logging-redaction scope) and ADR-019
-(future execution families) remain Proposed. ADR-018 (error-root taxonomy)
-remains Deferred. ADR-017 (metadata portability) also remains Deferred:
-ADR-024 narrowly answers its "persistence" review trigger with one optional,
-explicitly composed port and file sink, but does not resolve plugin, queue,
-or worker portability, so the status is unchanged. Current totals are 17
-Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+ownership), ADR-023 (CLI application entry point and process boundary),
+ADR-024 (application-level persistence boundary for crawl results), and
+ADR-025 (extensible parser-family composition seam) are Accepted and
+implemented. ADR-016 (logging-redaction scope) and ADR-019 (future
+execution families) remain Proposed. ADR-018 (error-root taxonomy) remains
+Deferred. ADR-017 (metadata portability) also remains Deferred: ADR-024 and
+ADR-025 together narrowly answer its "persistence" and "multiple parser
+families"/"custom parser or adapter behavior" review triggers with an
+optional persistence port and a closed, statically-dispatched second parser
+family, but neither resolves plugin, queue, or worker portability, so the
+status is unchanged. Current totals are 18 Accepted, 2 Proposed, 2 Deferred,
+and 0 Superseded.
 
 Async execution, browser automation, dynamic plugins, distributed crawling,
-workers, queues, metrics, tracing, CLI-triggered persistence, scheduling,
-thread-safety guarantees, automatic redirects, and live profile reload remain
-unimplemented or conditional future work. An optional, caller-composed
+workers, queues, metrics, tracing, CLI-triggered persistence, credentialed/
+authenticated outbound requests, non-HTML content acquisition, scheduling,
+thread-safety guarantees, automatic redirects, and live profile reload
+remain unimplemented or conditional future work. An optional, caller-composed
 persistence primitive exists (see Persistence boundary below); it is not
-wired into the CLI or application service.
+wired into the CLI or application service. A second, synthetic parser family
+(`generic_json_article`) exists to prove multi-family composition (see
+Parser-family composition below); no production source uses it, and
+`adapter_key` remains reserved and unconditionally rejected.
 
 ### Operational CLI process boundary
 
@@ -502,6 +513,36 @@ since the guarantee under test is the absence of any reference at all. A
 caller that already holds a produced `CrawlerItem` composes a sink
 explicitly, outside the application runtime's ownership.
 
+### Parser-family composition
+
+`SourceProfile`/`ParserComposer` implement ADR-025's closed, statically
+dispatched parser-family seam. `SourceProfile.supported_parser_families` is
+a `ClassVar[frozenset[str]]` listing exactly `jsonld_article` and
+`generic_json_article`; each addition requires a reviewed code change to
+both that constant and `ParserComposer.create()`'s explicit if/elif
+dispatch — never configuration, environment variables, reflection, entry
+points, or a caller-supplied factory.
+
+`GenericJsonArticleParser` is a synthetic proof-of-concept second family:
+it parses a flat JSON object directly from `HtmlDocument.content` (never
+JSON-LD, never HTML) and produces the same `ArticleItem`/`CrawlerItem`
+JSON-safe output shape as `JsonLdArticleParser`, so ADR-023's CLI stdout
+contract and ADR-024's persistence serialization remain valid without any
+change to either. `adapter_key` is unaffected by this decision: it remains
+reserved and is still unconditionally rejected by `ParserComposer.create()`
+when non-null, since it addresses a distinct concern (per-publisher
+customization within one family, not cross-format family selection).
+
+Two acquisition-layer boundaries stay unchanged under this ADR:
+`HtmlFetcher` still accepts only `text/html`/`application/xhtml+xml`
+content types, so `generic_json_article` is exercised only through
+synthetic, in-test `HtmlDocument` fixtures, never real network
+acquisition; and no credential or authentication mechanism (API key,
+bearer token, OAuth) exists anywhere in `http/` or `identity/`. No
+production `SourceProfile` uses `generic_json_article`, and no external
+source, platform, or API is selected, authorized, or implemented by this
+decision.
+
 ### Public API discipline
 
 - Package `__all__` declarations define intentional public surfaces.
@@ -515,6 +556,9 @@ explicitly, outside the application runtime's ownership.
 - The `aa_crawler.persistence` public surface is exactly
   `BaseCrawlResultSink`, `FileCrawlResultSink`, `PersistenceError`, and
   `PersistenceWriteError`.
+- The `aa_crawler.parser` public surface now also exports
+  `GenericJsonArticleParser` alongside `JsonLdArticleParser`; both derive
+  from `BaseParser`.
 - Do not introduce premature compatibility aliases, mutable global registries,
   service locators, or unapproved convenience orchestration methods.
 
@@ -929,6 +973,20 @@ serialization and durable-write failures. The optionality test parses
 `aa_crawler.persistence`, proving the boundary stays optional by
 construction rather than by convention.
 
+Sprint 8 adds tests for the second, synthetic `generic_json_article` parser
+family and its composition dispatch. The new
+`tests/parser/test_generic_json_article.py` covers constructor validation,
+the same JSON-safe `ArticleItem`/`CrawlerItem` output shape as
+`jsonld_article`, malformed/non-object JSON payloads, missing or invalid
+required fields, and lenient handling of invalid optional fields (image
+URL, language, authors). `tests/composition/test_parser.py` and
+`tests/sources/test_models.py` add coverage proving the existing
+`jsonld_article` dispatch path is unaffected, both families can be composed
+independently without interference, and `supported_parser_families` lists
+exactly the two shipped families. No test exercises real network
+acquisition of non-HTML content or any credential mechanism, since neither
+exists.
+
 ### 11.4 Coverage Targets
 
 | Phase | Target |
@@ -1088,8 +1146,8 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 4 | Completed identity, retry safety, article parsing, declarative sources, and documentation closure |
 | Sprint 5 | Application orchestration and runtime composition completed |
 | Sprint 6 | Operational CLI process boundary completed: ADR-023 accepted, CLI implemented, integration verification complete, documentation aligned |
-| Sprint 7 | Application-level persistence boundary in progress: ADR-024 accepted, persistence port and file sink implemented, integration verification complete, documentation alignment in progress |
-| Sprint 8 | Data validation schemas, pipeline test fixtures |
+| Sprint 7 | Application-level persistence boundary completed: ADR-024 accepted, persistence port and file sink implemented, integration verification complete, documentation aligned |
+| Sprint 8 | Extensible parser-family composition seam in progress: ADR-025 accepted, SourceProfile/ParserComposer support two closed parser families, integration verification complete, documentation alignment in progress |
 | Sprint 9 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging |
 | Sprint 10 | Performance benchmarks, security scanning (`bandit`), dependency audit automation |
 

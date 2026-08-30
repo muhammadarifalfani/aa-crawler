@@ -11,11 +11,12 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprint 5 and Sprint 6 are complete and closed. Sprint 7
-(an application-level persistence boundary) is in progress: ADR-024 is
-Accepted, the persistence port and a minimal file-based sink are implemented,
-and integration verification confirmed the boundary stays fully optional and
-unreferenced by the application or CLI layers.
+**Current status:** Sprints 5, 6, and 7 are complete and closed. Sprint 8
+(an extensible parser-family composition seam) is in progress: ADR-025 is
+Accepted, `SourceProfile`/`ParserComposer` now support two closed,
+statically-dispatched parser families, and integration verification
+confirmed the existing `jsonld_article` path, the CLI, and the persistence
+boundary are all unaffected.
 
 ## Current capabilities
 
@@ -40,11 +41,17 @@ unreferenced by the application or CLI layers.
   with one minimal append-only file sink (`FileCrawlResultSink`), reused by
   callers explicitly; never constructed by `ArticleCrawlService`,
   `ApplicationRuntime`, or `aa_crawler.cli`
+- Two closed, statically-dispatched parser families (`jsonld_article` and
+  `generic_json_article`), with `adapter_key` remaining reserved and
+  unconditionally rejected
 
 ## Current limitations
 
 - Automatic redirect following is not enabled.
-- `jsonld_article` is the only supported parser family.
+- `generic_json_article` is a synthetic proof-of-concept parser family
+  exercised only through in-test fixtures; no production `SourceProfile`
+  uses it, and it is not reachable through real network acquisition, since
+  `HtmlFetcher` still accepts only HTML content types.
 - Dynamic adapters and plugin runtimes are not implemented.
 - The production source set is intentionally small, and live crawling remains
   governance-controlled.
@@ -175,10 +182,12 @@ shipped article fields:
 `lead_image_url`, `language`.
 
 `requested_url` preserves the exact URL supplied to the CLI; `canonical_url`
-preserves the parser-derived canonical URL independently. This output
-contract reflects the currently shipped `jsonld_article` parser family only;
-it does not promise a stable serialization for hypothetical future parser
-families.
+preserves the parser-derived canonical URL independently. In practice, the
+CLI only ever produces `jsonld_article`-parsed output today: no production
+`SourceProfile` uses the second, synthetic `generic_json_article` family
+(ADR-025), and `HtmlFetcher` still accepts only HTML content types. This
+output contract does not promise a stable serialization for a hypothetical
+future parser family with a different output shape.
 
 #### Exit codes
 
@@ -239,10 +248,15 @@ policy and uses bounded deterministic backoff.
 
 ### Article parsing
 
-`ArticleItem` represents normalized immutable article metadata.
-`JsonLdArticleParser` extracts source-agnostic `NewsArticle` JSON-LD while
-keeping requested and canonical URLs distinct. Tests use synthetic metadata;
-article-body extraction is not part of the current generic contract.
+`ArticleItem` represents normalized immutable article metadata, produced by
+either shipped parser family. `JsonLdArticleParser` extracts source-agnostic
+`NewsArticle` JSON-LD from HTML while keeping requested and canonical URLs
+distinct. `GenericJsonArticleParser` (ADR-025) is a synthetic
+proof-of-concept second family that parses a flat JSON object directly from
+`HtmlDocument.content` — never JSON-LD, never HTML — while producing the
+exact same `ArticleItem`/`CrawlerItem` output shape. It is exercised only
+through synthetic in-test fixtures. Tests use synthetic metadata;
+article-body extraction is not part of either generic contract.
 
 ### Declarative sources
 
@@ -250,7 +264,10 @@ article-body extraction is not part of the current generic contract.
 - `SourceRegistry` performs exact-host lookup and excludes disabled profiles
   by default.
 - `ParserComposer` constructs parsers through an explicit static mapping; no
-  dynamic plugin system exists.
+  dynamic plugin system exists. Two parser families are currently supported
+  (`jsonld_article`, `generic_json_article`); each addition requires a
+  reviewed code change to `SourceProfile.supported_parser_families` and
+  `ParserComposer`'s dispatch, never configuration or runtime registration.
 
 Ordinary source onboarding adds a reviewed profile and reuses the generic
 parser when the source is structurally compatible. A source-specific parser or
@@ -446,12 +463,15 @@ invocations.
 | **Sprint 4** | Identity, retry safety, article parsing, and declarative sources | **Completed** |
 | **Sprint 5** | Application orchestration and runtime resource ownership | **Completed** |
 | **Sprint 6** | Operational CLI process boundary | **Completed** |
-| **Sprint 7** | Application-level persistence boundary | **In progress** |
+| **Sprint 7** | Application-level persistence boundary | **Completed** |
+| **Sprint 8** | Extensible parser-family composition seam | **In progress** |
 
-Possible future directions remain provisional, not committed scope: separately
-approved redirect architecture, broader reviewed sources, alternate execution
-families under ADR-019, CLI-triggered persistence, worker/queue/scheduler
-concerns, observability hardening, and evidence-driven adapter extensibility.
+Possible future directions remain provisional, not committed scope: a real
+external source or platform proposal (with its own legal/acquisition/
+credential review), separately approved redirect architecture, broader
+reviewed sources, alternate execution families under ADR-019,
+CLI-triggered persistence, worker/queue/scheduler concerns, and
+observability hardening.
 
 ## Documentation
 
@@ -464,6 +484,7 @@ concerns, observability hardening, and evidence-driven adapter extensibility.
 - [ADR-022: Application Runtime Composition and Resource Ownership](docs/adr/0022-application-runtime-composition-and-resource-ownership.md)
 - [ADR-023: CLI Application Entry Point and Process Boundary](docs/adr/0023-cli-application-entry-point-and-process-boundary.md)
 - [ADR-024: Application-Level Persistence Boundary for Crawl Results](docs/adr/0024-application-level-persistence-boundary.md)
+- [ADR-025: Extensible Parser-Family Composition Seam](docs/adr/0025-extensible-parser-family-composition.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 
