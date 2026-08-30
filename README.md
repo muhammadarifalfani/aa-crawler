@@ -11,11 +11,11 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprint 5 is complete and closed. Sprint 6 (an operational
-CLI process boundary) is complete and formally closed: ADR-023 is Accepted,
-the CLI is implemented, process-boundary integration verification is
-complete, documentation is aligned, and the final repository-wide
-verification passed.
+**Current status:** Sprint 5 and Sprint 6 are complete and closed. Sprint 7
+(an application-level persistence boundary) is in progress: ADR-024 is
+Accepted, the persistence port and a minimal file-based sink are implemented,
+and integration verification confirmed the boundary stays fully optional and
+unreferenced by the application or CLI layers.
 
 ## Current capabilities
 
@@ -36,6 +36,10 @@ verification passed.
   application runtime, with one JSON object on stdout and CLI-local exit codes
 - Network-isolated CLI process-boundary integration verification exercising
   real bootstrap, runtime, source, and parser components
+- An optional, application-level persistence port (`BaseCrawlResultSink`)
+  with one minimal append-only file sink (`FileCrawlResultSink`), reused by
+  callers explicitly; never constructed by `ArticleCrawlService`,
+  `ApplicationRuntime`, or `aa_crawler.cli`
 
 ## Current limitations
 
@@ -44,8 +48,12 @@ verification passed.
 - Dynamic adapters and plugin runtimes are not implemented.
 - The production source set is intentionally small, and live crawling remains
   governance-controlled.
-- No persistence, worker, queue, scheduler, distributed execution, asynchronous
-  runtime, browser rendering, or live profile reload exists.
+- Persistence is an explicit, optional, caller-composed primitive only: no
+  worker, queue, scheduler, distributed execution, asynchronous runtime,
+  browser rendering, or live profile reload exists, and no CLI or
+  application-service flag wires persistence into the crawl flow.
+- The shipped file sink is append-only with no deduplication, no idempotency
+  guarantee, and no database or schema selection.
 - The synchronous runtime provides no thread-safety guarantee.
 - The CLI accepts exactly one URL per invocation: no batch input, no file or
   stdin input, and no JSON Lines output.
@@ -71,6 +79,7 @@ The major packages each own a narrow responsibility:
 | `composition` | Explicit source-to-parser construction |
 | `application` | Article crawl coordination, application errors, and runtime ownership |
 | `cli` | Synchronous process boundary: argument parsing, bootstrap/runtime invocation, serialization, and exit-code translation |
+| `persistence` | Optional, explicitly composed crawl-result persistence port and concrete sinks |
 
 The current application-level flow is:
 
@@ -184,6 +193,34 @@ families.
 These are CLI-local process-boundary semantics only. They do not introduce
 or replace a project-wide exception hierarchy or error taxonomy.
 
+### Persistence boundary
+
+`aa_crawler.persistence` is an optional, application-level port implementing
+ADR-024. It defines an abstract `BaseCrawlResultSink` (`save(item: CrawlerItem)
+-> None`) and one concrete implementation, `FileCrawlResultSink`, which
+serializes `CrawlerItem.data` to JSON and appends it as one line to a
+caller-supplied file path — reusing the exact `dict(item.data)` →
+`json.dumps(...)` pattern already used by `aa_crawler.cli`.
+
+This package is never imported by `ArticleCrawlService`, `ApplicationRuntime`,
+or `aa_crawler.cli`; a static test statically verifies this. A caller that
+already holds a produced `CrawlerItem` composes a sink explicitly:
+
+```python
+from pathlib import Path
+
+from aa_crawler.persistence import FileCrawlResultSink
+
+sink = FileCrawlResultSink(destination=Path("data/processed/results.jsonl"))
+for item in items:
+    sink.save(item)
+```
+
+`save()` raises `PersistenceWriteError` (a `CrawlerError` subclass) when
+serialization or the durable write fails. The sink does not deduplicate,
+overwrite, or guarantee idempotency; repeated `save()` calls with the same
+item append the same line again.
+
 ### Request identity
 
 `RequestIdentity` is immutable and supplies one consistent User-Agent to
@@ -282,6 +319,10 @@ aa_crawler/
 │   ├── cli/
 │   │   ├── __init__.py             # Argument parsing and public main()
 │   │   └── app.py                  # Bootstrap → runtime → crawl → exit-code mapping
+│   ├── persistence/
+│   │   ├── base.py                 # Abstract BaseCrawlResultSink port
+│   │   ├── errors.py               # PersistenceError, PersistenceWriteError
+│   │   └── file_sink.py            # FileCrawlResultSink (append-only JSON Lines)
 │   └── bootstrap.py                # Configuration, paths, and logging startup
 ├── tests/                          # Mirrored automated test suite
 ├── pyproject.toml                  # Project metadata and dependencies
@@ -405,11 +446,12 @@ invocations.
 | **Sprint 4** | Identity, retry safety, article parsing, and declarative sources | **Completed** |
 | **Sprint 5** | Application orchestration and runtime resource ownership | **Completed** |
 | **Sprint 6** | Operational CLI process boundary | **Completed** |
+| **Sprint 7** | Application-level persistence boundary | **In progress** |
 
 Possible future directions remain provisional, not committed scope: separately
 approved redirect architecture, broader reviewed sources, alternate execution
-families under ADR-019, persistence, worker/queue/scheduler concerns,
-observability hardening, and evidence-driven adapter extensibility.
+families under ADR-019, CLI-triggered persistence, worker/queue/scheduler
+concerns, observability hardening, and evidence-driven adapter extensibility.
 
 ## Documentation
 
@@ -421,6 +463,7 @@ observability hardening, and evidence-driven adapter extensibility.
 - [ADR-021: Application-Level Article Crawl Orchestration](docs/adr/0021-application-level-article-crawl-orchestration.md)
 - [ADR-022: Application Runtime Composition and Resource Ownership](docs/adr/0022-application-runtime-composition-and-resource-ownership.md)
 - [ADR-023: CLI Application Entry Point and Process Boundary](docs/adr/0023-cli-application-entry-point-and-process-boundary.md)
+- [ADR-024: Application-Level Persistence Boundary for Crawl Results](docs/adr/0024-application-level-persistence-boundary.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 
