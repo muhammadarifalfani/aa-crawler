@@ -9,7 +9,12 @@ import pytest
 from aa_crawler.composition import ParserComposer, ParserCompositionError
 from aa_crawler.crawler import CrawlerItem
 from aa_crawler.html import HtmlDocument
-from aa_crawler.parser import ArticleParserError, BaseParser, JsonLdArticleParser
+from aa_crawler.parser import (
+    ArticleParserError,
+    BaseParser,
+    GenericJsonArticleParser,
+    JsonLdArticleParser,
+)
 from aa_crawler.sources import SourceProfile
 
 
@@ -47,6 +52,22 @@ def _document(*, headline: str = "Synthetic headline") -> HtmlDocument:
     )
 
 
+def _json_document(*, headline: str = "Synthetic headline") -> HtmlDocument:
+    payload = {
+        "url": "https://news.example/articles/one",
+        "headline": headline,
+        "published_at": "2026-08-07T12:30:00+07:00",
+    }
+    return HtmlDocument(
+        requested_url="https://news.example/articles/one",
+        final_url="https://news.example/articles/one",
+        status_code=200,
+        headers={"Content-Type": "application/json"},
+        content=json.dumps(payload),
+        encoding="utf-8",
+    )
+
+
 def test_composer_is_stateless_immutable_and_has_minimal_public_api() -> None:
     composer = ParserComposer()
 
@@ -72,6 +93,46 @@ def test_jsonld_profile_creates_base_parser_with_exact_context() -> None:
     assert parser.source == "example_news"
     assert parser.source_domains == frozenset({"news.example", "regional.news.example"})
     assert profile.domains == ("news.example", "regional.news.example")
+
+
+def test_generic_json_article_profile_creates_base_parser_with_exact_context() -> None:
+    profile = _profile(parser_family="generic_json_article")
+
+    parser = ParserComposer().create(profile)
+
+    assert isinstance(parser, GenericJsonArticleParser)
+    assert isinstance(parser, BaseParser)
+    assert parser.source == "example_news"
+    assert parser.source_domains == frozenset({"news.example"})
+
+
+def test_composed_generic_json_article_parser_executes_synthetic_flow() -> None:
+    profile = _profile(parser_family="generic_json_article")
+    composer = ParserComposer()
+    document = _json_document()
+
+    parser = composer.create(profile)
+    items = list(parser.parse(document))
+
+    assert len(items) == 1
+    assert isinstance(items[0], CrawlerItem)
+    assert items[0].data["source"] == "example_news"
+    assert items[0].data["headline"] == "Synthetic headline"
+    assert items[0].data["canonical_url"] == "https://news.example/articles/one"
+
+
+def test_jsonld_and_generic_json_article_families_do_not_interfere() -> None:
+    composer = ParserComposer()
+    jsonld_profile = _profile(domains=("news.example", "regional.news.example"))
+    generic_profile = _profile(parser_family="generic_json_article")
+
+    jsonld_parser = composer.create(jsonld_profile)
+    generic_parser = composer.create(generic_profile)
+
+    assert isinstance(jsonld_parser, JsonLdArticleParser)
+    assert isinstance(generic_parser, GenericJsonArticleParser)
+    assert list(jsonld_parser.parse(_document())) != []
+    assert list(generic_parser.parse(_json_document())) != []
 
 
 def test_create_returns_a_new_parser_each_time() -> None:

@@ -155,6 +155,18 @@ def test_parser_family_requires_a_string() -> None:
         _profile(parser_family=object())
 
 
+def test_generic_json_article_is_a_supported_parser_family() -> None:
+    profile = _profile(parser_family="generic_json_article")
+
+    assert profile.parser_family == "generic_json_article"
+
+
+def test_supported_parser_families_lists_exactly_the_two_shipped_families() -> None:
+    assert SourceProfile.supported_parser_families == frozenset(
+        {"jsonld_article", "generic_json_article"}
+    )
+
+
 def test_adapter_key_is_optional_and_declarative() -> None:
     assert _profile(adapter_key=None).adapter_key is None
     assert _profile(adapter_key="legacy_canonical").adapter_key == "legacy_canonical"

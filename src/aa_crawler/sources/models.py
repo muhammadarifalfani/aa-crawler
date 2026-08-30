@@ -12,6 +12,7 @@ _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 _HOST_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _MAX_IDENTIFIER_LENGTH = 64
 _PARSER_FAMILY = "jsonld_article"
+_GENERIC_JSON_ARTICLE_PARSER_FAMILY = "generic_json_article"
 _LOCAL_HOST_SUFFIXES = (".home", ".internal", ".lan", ".local", ".localhost")
 
 
@@ -106,7 +107,9 @@ class SourceProfile:
     adapter_key: str | None = None
     enabled: bool = True
 
-    supported_parser_families: ClassVar[frozenset[str]] = frozenset({_PARSER_FAMILY})
+    supported_parser_families: ClassVar[frozenset[str]] = frozenset(
+        {_PARSER_FAMILY, _GENERIC_JSON_ARTICLE_PARSER_FAMILY}
+    )
 
     def __post_init__(self) -> None:
         source = _normalize_identifier(self.source, field_name="source")
@@ -114,7 +117,7 @@ class SourceProfile:
         if not isinstance(self.parser_family, str):
             raise TypeError("parser_family must be a string")
         if self.parser_family not in self.supported_parser_families:
-            raise ValueError("parser_family must be jsonld_article")
+            raise ValueError("parser_family must be a supported parser family")
         adapter_key = self.adapter_key
         if adapter_key is not None:
             adapter_key = _normalize_identifier(adapter_key, field_name="adapter_key")
