@@ -14,6 +14,7 @@ from aa_crawler.parser import (
     BaseParser,
     GenericJsonArticleParser,
     JsonLdArticleParser,
+    MicrodataArticleParser,
 )
 from aa_crawler.sources import SourceProfile
 
@@ -64,6 +65,28 @@ def _json_document(*, headline: str = "Synthetic headline") -> HtmlDocument:
         status_code=200,
         headers={"Content-Type": "application/json"},
         content=json.dumps(payload),
+        encoding="utf-8",
+    )
+
+
+def _microdata_document(*, headline: str = "Synthetic headline") -> HtmlDocument:
+    canonical_url = "https://news.example/articles/one"
+    content = (
+        "<html><head>"
+        f'<link rel="canonical" href="{canonical_url}">'
+        "</head><body>"
+        '<div itemscope itemtype="https://schema.org/NewsArticle">'
+        f'<link itemprop="mainEntityOfPage" href="{canonical_url}">'
+        f'<h1 itemprop="headline">{headline}</h1>'
+        '<time itemprop="datePublished" datetime="2026-08-07T12:30:00+07:00"></time>'
+        "</div></body></html>"
+    )
+    return HtmlDocument(
+        requested_url=canonical_url,
+        final_url=canonical_url,
+        status_code=200,
+        headers={"Content-Type": "text/html"},
+        content=content,
         encoding="utf-8",
     )
 
@@ -121,18 +144,48 @@ def test_composed_generic_json_article_parser_executes_synthetic_flow() -> None:
     assert items[0].data["canonical_url"] == "https://news.example/articles/one"
 
 
-def test_jsonld_and_generic_json_article_families_do_not_interfere() -> None:
+def test_microdata_article_profile_creates_base_parser_with_exact_context() -> None:
+    profile = _profile(parser_family="microdata_article")
+
+    parser = ParserComposer().create(profile)
+
+    assert isinstance(parser, MicrodataArticleParser)
+    assert isinstance(parser, BaseParser)
+    assert parser.source == "example_news"
+    assert parser.source_domains == frozenset({"news.example"})
+
+
+def test_composed_microdata_article_parser_executes_synthetic_flow() -> None:
+    profile = _profile(parser_family="microdata_article")
+    composer = ParserComposer()
+    document = _microdata_document()
+
+    parser = composer.create(profile)
+    items = list(parser.parse(document))
+
+    assert len(items) == 1
+    assert isinstance(items[0], CrawlerItem)
+    assert items[0].data["source"] == "example_news"
+    assert items[0].data["headline"] == "Synthetic headline"
+    assert items[0].data["canonical_url"] == "https://news.example/articles/one"
+
+
+def test_jsonld_generic_json_and_microdata_families_do_not_interfere() -> None:
     composer = ParserComposer()
     jsonld_profile = _profile(domains=("news.example", "regional.news.example"))
     generic_profile = _profile(parser_family="generic_json_article")
+    microdata_profile = _profile(parser_family="microdata_article")
 
     jsonld_parser = composer.create(jsonld_profile)
     generic_parser = composer.create(generic_profile)
+    microdata_parser = composer.create(microdata_profile)
 
     assert isinstance(jsonld_parser, JsonLdArticleParser)
     assert isinstance(generic_parser, GenericJsonArticleParser)
+    assert isinstance(microdata_parser, MicrodataArticleParser)
     assert list(jsonld_parser.parse(_document())) != []
     assert list(generic_parser.parse(_json_document())) != []
+    assert list(microdata_parser.parse(_microdata_document())) != []
 
 
 def test_create_returns_a_new_parser_each_time() -> None:

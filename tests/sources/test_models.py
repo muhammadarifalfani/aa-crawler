@@ -161,9 +161,15 @@ def test_generic_json_article_is_a_supported_parser_family() -> None:
     assert profile.parser_family == "generic_json_article"
 
 
-def test_supported_parser_families_lists_exactly_the_two_shipped_families() -> None:
+def test_microdata_article_is_a_supported_parser_family() -> None:
+    profile = _profile(parser_family="microdata_article")
+
+    assert profile.parser_family == "microdata_article"
+
+
+def test_supported_parser_families_lists_exactly_the_three_shipped_families() -> None:
     assert SourceProfile.supported_parser_families == frozenset(
-        {"jsonld_article", "generic_json_article"}
+        {"jsonld_article", "generic_json_article", "microdata_article"}
     )
 
 
