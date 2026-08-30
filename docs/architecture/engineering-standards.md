@@ -386,16 +386,22 @@ configuration and primary observability APIs remain frozen.
 ADR-014 (user-agent ownership), ADR-015 (retry idempotency), ADR-020
 (declarative source architecture), ADR-021 (application-level article crawl
 orchestration), ADR-022 (application runtime composition and resource
-ownership), and ADR-023 (CLI application entry point and process boundary)
-are Accepted and implemented. ADR-016 (logging-redaction scope) and
-ADR-019 (future execution families) remain Proposed. ADR-017 (metadata
-portability) and ADR-018 (error-root taxonomy) remain Deferred. Current totals
-are 16 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+ownership), ADR-023 (CLI application entry point and process boundary), and
+ADR-024 (application-level persistence boundary for crawl results) are
+Accepted and implemented. ADR-016 (logging-redaction scope) and ADR-019
+(future execution families) remain Proposed. ADR-018 (error-root taxonomy)
+remains Deferred. ADR-017 (metadata portability) also remains Deferred:
+ADR-024 narrowly answers its "persistence" review trigger with one optional,
+explicitly composed port and file sink, but does not resolve plugin, queue,
+or worker portability, so the status is unchanged. Current totals are 17
+Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 Async execution, browser automation, dynamic plugins, distributed crawling,
-workers, queues, metrics, tracing, persistence, scheduling, thread-safety
-guarantees, automatic redirects, and live profile reload remain unimplemented
-or conditional future work.
+workers, queues, metrics, tracing, CLI-triggered persistence, scheduling,
+thread-safety guarantees, automatic redirects, and live profile reload remain
+unimplemented or conditional future work. An optional, caller-composed
+persistence primitive exists (see Persistence boundary below); it is not
+wired into the CLI or application service.
 
 ### Operational CLI process boundary
 
@@ -472,6 +478,30 @@ on a known governance rejection, and on an unexpected failure after runtime
 creation is owned entirely by `ApplicationRuntime`/ADR-022; the CLI performs
 no secondary cleanup of resources it does not own.
 
+### Persistence boundary
+
+`aa_crawler.persistence` is an optional, application-level port implementing
+ADR-024. It owns:
+
+- one abstract port, `BaseCrawlResultSink`, declaring `save(item:
+  CrawlerItem) -> None`; and
+- one concrete sink, `FileCrawlResultSink`, which reuses the CLI's proven
+  `dict(item.data)` → `json.dumps(...)` serialization pattern and appends
+  the result as one JSON Lines record to a caller-supplied destination.
+
+It explicitly does not own CLI wiring, database or schema selection,
+worker/queue integration, or idempotency guarantees — `save()` may append a
+duplicate line if called twice with the same item. Serialization and write
+failures both raise `PersistenceWriteError`, a `CrawlerError` subclass,
+rather than leaking `TypeError`/`OSError` directly.
+
+`ArticleCrawlService`, `ApplicationRuntime`, and `aa_crawler.cli` never
+import `aa_crawler.persistence`; this optionality is verified statically
+(via `ast` module inspection) rather than by exercising runtime behavior,
+since the guarantee under test is the absence of any reference at all. A
+caller that already holds a produced `CrawlerItem` composes a sink
+explicitly, outside the application runtime's ownership.
+
 ### Public API discipline
 
 - Package `__all__` declarations define intentional public surfaces.
@@ -482,6 +512,9 @@ no secondary cleanup of resources it does not own.
 - The `aa_crawler.cli` public surface is exactly `main`; the top-level
   `aa_crawler.main` is that same object, re-exported as a compatibility
   entry point for the `aa-crawler` console script.
+- The `aa_crawler.persistence` public surface is exactly
+  `BaseCrawlResultSink`, `FileCrawlResultSink`, `PersistenceError`, and
+  `PersistenceWriteError`.
 - Do not introduce premature compatibility aliases, mutable global registries,
   service locators, or unapproved convenience orchestration methods.
 
@@ -840,6 +873,7 @@ tests/
 ├── sources/                 # Profile and exact-registry tests
 ├── composition/             # Parser-construction tests
 ├── cli/                     # Argument-parsing and exit-code-mapping tests
+├── persistence/             # Port, sink, error, and static optionality tests
 └── integration/             # Cross-package synthetic integration tests
 ```
 
@@ -884,6 +918,16 @@ requested/canonical URL distinction, runtime cleanup across success and
 failure paths, and correlation-context isolation across invocations. As
 above, documentation must describe these architecture facts rather than
 transient test counts.
+
+Sprint 7 adds persistence-boundary unit tests and one static optionality
+test. Unit tests cover the abstract port's non-instantiability, the file
+sink's append-only write behavior (including repeated saves with no
+deduplication), the `destination` property, and error-wrapping for both
+serialization and durable-write failures. The optionality test parses
+`aa_crawler.application.runtime`, `aa_crawler.application.service`, and
+`aa_crawler.cli.app` with `ast` and asserts none of their imports reference
+`aa_crawler.persistence`, proving the boundary stays optional by
+construction rather than by convention.
 
 ### 11.4 Coverage Targets
 
@@ -1044,6 +1088,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 4 | Completed identity, retry safety, article parsing, declarative sources, and documentation closure |
 | Sprint 5 | Application orchestration and runtime composition completed |
 | Sprint 6 | Operational CLI process boundary completed: ADR-023 accepted, CLI implemented, integration verification complete, documentation aligned |
+| Sprint 7 | Application-level persistence boundary in progress: ADR-024 accepted, persistence port and file sink implemented, integration verification complete, documentation alignment in progress |
 | Sprint 8 | Data validation schemas, pipeline test fixtures |
 | Sprint 9 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging |
 | Sprint 10 | Performance benchmarks, security scanning (`bandit`), dependency audit automation |
