@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 8 implementation is complete. Integration verification is complete.
-Documentation alignment is complete. This completion report has been
-created.
+Documentation alignment is complete. This completion report was merged,
+local `main` was subsequently synchronized cleanly with `origin/main`, and
+the final repository-wide verification (Section 10) passed on that merged
+state with no Critical or Major findings.
 
-Formal closure must not be declared until this report is merged, the final
-repository quality gate passes on the merged state, and local `main` is
-synchronized cleanly with `origin/main`.
+**Sprint 8 is formally closed.**
 
 ## 2. Objective
 
@@ -165,6 +165,20 @@ verification run on the merged documentation-alignment state
 - Critical findings: 0
 - Major findings: 0
 
+The final repository-wide verification, required for closure and run after
+this completion report itself was merged, on
+`7e167b0d56683f01a039e8ba385a2ab62af57933`, confirmed the same result:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 775 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 94.84%, against the configured 70% threshold
+- `uv lock --check`: passed
+- pre-commit: all hooks passed
+- Critical findings: 0
+- Major findings: 0
+
 ## 11. Security and safety properties
 
 Sprint 8 added one narrow, internal composition mechanism without claiming
@@ -259,6 +273,7 @@ the Sprint 7 completion record.
 - PR #63 — `SourceProfile`/`ParserComposer`/`GenericJsonArticleParser`
   implementation and tests
 - PR #64 — README, Engineering Standards, and ADR index alignment
+- PR #65 — Sprint 8 completion report
 
 ## 17. Sprint 8 closure checklist
 
@@ -275,10 +290,10 @@ the Sprint 7 completion record.
 - [x] Engineering Standards aligned
 - [x] ADR index implementation reference aligned
 - [x] Sprint 8 completion report created
-- [ ] Sprint 8 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 8 formally closed
+- [x] Sprint 8 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 8 formally closed
 
 ## 18. Provisional post-Sprint-8 direction
 
@@ -294,6 +309,9 @@ architecture approval before implementation.
 
 ## 19. Completion statement
 
-Sprint 8 is ready for completion-report review. Formal closure occurs only
-after this report is merged, the full repository quality gate passes on the
-merged state, and local `main` is synchronized cleanly with `origin/main`.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `7e167b0d56683f01a039e8ba385a2ab62af57933`, and the final
+repository-wide quality gate passed on that merged state with no Critical or
+Major findings.
+
+**Sprint 8 is formally closed.**
