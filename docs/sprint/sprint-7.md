@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 7 implementation is complete. Integration verification is complete.
-Documentation alignment is complete. This completion report has been
-created.
+Documentation alignment is complete. This completion report was merged,
+local `main` was subsequently synchronized cleanly with `origin/main`, and
+the final repository-wide verification (Section 11) passed on that merged
+state with no Critical or Major findings.
 
-Formal closure must not be declared until this report is merged, the final
-repository quality gate passes on the merged state, and local `main` is
-synchronized cleanly with `origin/main`.
+**Sprint 7 is formally closed.**
 
 ## 2. Objective
 
@@ -163,6 +163,20 @@ verification run on the merged documentation-alignment state
 - Critical findings: 0
 - Major findings: 0
 
+The final repository-wide verification, required for closure and run after
+this completion report itself was merged, on
+`69353e04bf1e3acf99ba0dfd706891c485a78535`, confirmed the same result:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 724 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 95.08%, against the configured 70% threshold
+- `uv lock --check`: passed
+- pre-commit: all hooks passed
+- Critical findings: 0
+- Major findings: 0
+
 ## 12. Security and safety properties
 
 Sprint 7 added one narrow, optional boundary without claiming comprehensive
@@ -249,6 +263,7 @@ Sprint 6 completion record.
 - PR #58 — `aa_crawler.persistence` implementation (port, file sink, errors,
   and tests, including the static optionality guard)
 - PR #59 — README, Engineering Standards, and ADR index alignment
+- PR #60 — Sprint 7 completion report
 
 ## 18. Sprint 7 closure checklist
 
@@ -263,10 +278,10 @@ Sprint 6 completion record.
 - [x] Engineering Standards aligned
 - [x] ADR index implementation reference aligned
 - [x] Sprint 7 completion report created
-- [ ] Sprint 7 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 7 formally closed
+- [x] Sprint 7 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 7 formally closed
 
 ## 19. Provisional post-Sprint-7 direction
 
@@ -280,6 +295,9 @@ before implementation.
 
 ## 20. Completion statement
 
-Sprint 7 is ready for completion-report review. Formal closure occurs only
-after this report is merged, the full repository quality gate passes on the
-merged state, and local `main` is synchronized cleanly with `origin/main`.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `69353e04bf1e3acf99ba0dfd706891c485a78535`, and the final
+repository-wide quality gate passed on that merged state with no Critical or
+Major findings.
+
+**Sprint 7 is formally closed.**
