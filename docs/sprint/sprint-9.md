@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 9 implementation is complete. Integration verification is complete.
-Documentation alignment is complete. This completion report has been
-created.
+Documentation alignment is complete. This completion report was merged,
+local `main` was subsequently synchronized cleanly with `origin/main`, and
+the final repository-wide verification (Section 13) passed on that merged
+state with no Critical or Major findings.
 
-Formal closure must not be declared until this report is merged, the final
-repository quality gate passes on the merged state, and local `main` is
-synchronized cleanly with `origin/main`.
+**Sprint 9 is formally closed.**
 
 ## 2. Objective
 
@@ -220,6 +220,41 @@ verification run on the merged documentation-alignment state
 - Critical findings: 0
 - Major findings: 0
 
+The final repository-wide verification, required for closure and run after
+this completion report itself was merged, on
+`34c2bd6a05eda81495dfecc971ad28147c0566f6`, confirmed the same result, plus
+the additional checks Sprint 9's own workflow required:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 826 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 94.45%, against the configured 70% threshold
+- `uv lock --check`: passed; dependencies unchanged (`httpx`, `pydantic`,
+  `pydantic-settings` only)
+- pre-commit: all hooks passed
+- All five Sprint 9 commits (ADR-026, implementation, integration test,
+  documentation alignment, this completion report) confirmed as ancestors
+  of the merged `main`
+- ADR index totals confirmed consistent (19 Accepted, 2 Proposed, 2
+  Deferred, 0 Superseded) across README, Engineering Standards, and the ADR
+  index itself
+- Source governance confirmed unchanged: `DEFAULT_SOURCE_PROFILES` still
+  contains exactly CNN Indonesia (enabled) and Kompas (disabled), both
+  `jsonld_article`; neither newer family is used by any production profile
+- `SourceProfile.supported_parser_families` confirmed to list exactly
+  `jsonld_article`, `generic_json_article`, `microdata_article`
+- An independent `grep` across `application/`, `cli/`, and `persistence/`
+  for `microdata_article`/`MicrodataArticleParser` returned zero matches
+- An independent search for social-media-related code confirmed zero new
+  matches; the only hits were pre-existing, unrelated code (User-Agent
+  impersonation rejection listing `facebookexternalhit`/`twitterbot`, and
+  the pre-existing log-redaction patterns for `api_key`/`Bearer`)
+- Critical findings: 0
+- Major findings: 0
+
+**Sprint 9 verification PASSED — ready for formal closure.**
+
 ## 14. Current limitations
 
 - `microdata_article` is a proof-of-concept family only; no production
@@ -252,6 +287,7 @@ completion record.
 - PR #68 — `MicrodataArticleParser` implementation and composition wiring
 - PR #69 — Multi-format end-to-end integration verification
 - PR #70 — README, Engineering Standards, and ADR index alignment
+- PR #71 — Sprint 9 completion report
 
 ## 17. Sprint 9 closure checklist
 
@@ -269,10 +305,11 @@ completion record.
 - [x] Engineering Standards aligned
 - [x] ADR index implementation reference aligned
 - [x] Sprint 9 completion report created
-- [ ] Sprint 9 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 9 formally closed
+- [x] Sprint 9 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] No social-media implementation confirmed present
+- [x] Sprint 9 formally closed
 
 ## 18. Provisional post-Sprint-9 direction
 
@@ -290,7 +327,11 @@ and architecture approval before implementation.
 
 ## 19. Completion statement
 
-Sprint 9 is ready for completion-report review. Formal closure occurs only
-after this report is merged, the full repository quality gate passes on
-the merged state, and local `main` is synchronized cleanly with
-`origin/main`.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `34c2bd6a05eda81495dfecc971ad28147c0566f6`, and the final
+repository-wide quality gate passed on that merged state with no Critical
+or Major findings.
+
+**Sprint 9 verification PASSED — ready for formal closure.**
+
+**Sprint 9 is formally closed.**
