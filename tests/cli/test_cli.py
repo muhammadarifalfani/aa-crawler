@@ -167,6 +167,137 @@ def test_output_argument_is_parsed_and_forwarded_as_a_path(
     assert received_output == [destination]
 
 
+# --- Scheduled crawl mode dispatch (ADR-028) ----------------------------------
+
+
+def test_default_invocation_dispatches_to_single_shot_run_crawl(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    single_shot_calls: list[str] = []
+
+    def fake_run_crawl(url: str, *, output: Path | None = None) -> int:
+        del output
+        single_shot_calls.append(url)
+        return EXIT_SUCCESS
+
+    def fail_if_scheduled_mode_runs(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("scheduled mode must not run")
+
+    monkeypatch.setattr(cli_module, "run_crawl", fake_run_crawl)
+    monkeypatch.setattr(cli_module, "run_scheduled_crawl", fail_if_scheduled_mode_runs)
+
+    exit_code = main([_CNN_URL])
+
+    assert exit_code == EXIT_SUCCESS
+    assert single_shot_calls == [_CNN_URL]
+
+
+def test_interval_argument_dispatches_to_scheduled_crawl_not_single_shot(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli_module,
+        "run_crawl",
+        lambda *_args, **_kwargs: pytest.fail("single-shot mode must not run"),
+    )
+
+    def fake_run_scheduled_crawl(
+        url: str,
+        *,
+        interval: float,
+        output: Path | None = None,
+        max_runs: int | None = None,
+    ) -> int:
+        received["url"] = url
+        received["interval"] = interval
+        received["output"] = output
+        received["max_runs"] = max_runs
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_scheduled_crawl", fake_run_scheduled_crawl)
+
+    exit_code = main([_CNN_URL, "--interval", "5"])
+
+    assert exit_code == EXIT_SUCCESS
+    assert received == {
+        "url": _CNN_URL,
+        "interval": 5.0,
+        "output": None,
+        "max_runs": None,
+    }
+
+
+def test_interval_output_and_max_runs_are_all_forwarded_together(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    received: dict[str, object] = {}
+
+    def fake_run_scheduled_crawl(
+        url: str,
+        *,
+        interval: float,
+        output: Path | None = None,
+        max_runs: int | None = None,
+    ) -> int:
+        received["url"] = url
+        received["interval"] = interval
+        received["output"] = output
+        received["max_runs"] = max_runs
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_scheduled_crawl", fake_run_scheduled_crawl)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = main(
+        [
+            _CNN_URL,
+            "--interval",
+            "30",
+            "--max-runs",
+            "10",
+            "--output",
+            str(destination),
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert received == {
+        "url": _CNN_URL,
+        "interval": 30.0,
+        "output": destination,
+        "max_runs": 10,
+    }
+
+
+def test_max_runs_without_interval_is_rejected_by_argument_parsing() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main([_CNN_URL, "--max-runs", "3"])
+
+    assert excinfo.value.code == 2
+
+
+@pytest.mark.parametrize("raw_interval", ["0", "-5"])
+def test_non_positive_interval_is_rejected_by_argument_parsing(
+    raw_interval: str,
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main([_CNN_URL, "--interval", raw_interval])
+
+    assert excinfo.value.code == 2
+
+
+@pytest.mark.parametrize("raw_max_runs", ["0", "-1"])
+def test_non_positive_max_runs_is_rejected_by_argument_parsing(
+    raw_max_runs: str,
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main([_CNN_URL, "--interval", "5", "--max-runs", raw_max_runs])
+
+    assert excinfo.value.code == 2
+
+
 # --- Successful execution ----------------------------------------------------
 
 
