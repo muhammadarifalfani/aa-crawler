@@ -12,7 +12,7 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
-Current totals: 23 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+Current totals: 24 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 ## Numbering and filenames
 
@@ -56,3 +56,4 @@ that supersedes the historical record.
 | [ADR-028](0028-cli-scheduled-crawl-mode.md) | CLI scheduled crawl mode | Accepted | Add an optional `--interval SECONDS` CLI argument that repeats the existing synchronous crawl on one reused ApplicationRuntime, with an injectable sleep, an optional `--max-runs` bound, and a documented recoverable-vs-terminal per-iteration failure policy | `cli/app.py`, `cli/__init__.py` | Concurrent multi-source scheduled crawling, sub-second scheduling precision, or distributed/multi-process coordination |
 | [ADR-029](0029-cli-batch-url-input.md) | CLI batch/multi-URL input | Accepted | Add an optional `--urls-file PATH` CLI argument, mutually exclusive with the positional URL, that crawls a list of URLs once (or repeatedly with `--interval`), with a per-URL recoverable-vs-terminal policy where UnsupportedSourceError is recoverable (unlike ADR-028) and no new partial-failure exit code | `cli/batch.py`, `cli/__init__.py` | Concurrent per-URL crawling within one pass, a remote/dynamic URL-list source, or a caller-visible partial-success distinction |
 | [ADR-030](0030-sqlite-crawl-result-sink.md) | SQLite crawl result sink | Accepted | Add a second concrete persistence sink using only the standard-library `sqlite3` module, upserting by `requested_url` for real idempotency, with no CLI wiring in this sprint (explicitly deferred, mirroring ADR-024→ADR-027) | `persistence/sqlite_sink.py` | CLI wiring for sink selection is proposed, a concurrent multi-process write requirement is identified, or a typed-storage requirement beyond an opaque JSON payload is identified |
+| [ADR-031](0031-cli-sink-selection.md) | CLI sink selection | Accepted | Add an optional `--sink {file,sqlite}` CLI argument, valid only with `--output`, resolved once in `main()` and threaded through all four crawl entry functions as an injectable `sink_factory` defaulting to `FileCrawlResultSink`, preserving every existing invocation's exact behavior when omitted | `cli/__init__.py`, `cli/app.py`, `cli/scheduler.py`, `cli/batch.py` | A third concrete sink is proposed, a requirement to persist to more than one sink at once is identified, or `--output`'s own meaning needs to change |
