@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 13 implementation is complete. Integration verification is
-complete. Documentation alignment is complete. This completion report will
-be merged, local `main` will subsequently be synchronized cleanly with
-`origin/main`, and a final repository-wide verification will run on that
-merged state before formal closure.
+complete. Documentation alignment is complete. This completion report was
+merged, local `main` was subsequently synchronized cleanly with
+`origin/main`, and the final repository-wide verification (Section 9)
+passed on that merged state with no Critical or Major findings.
 
-**Sprint 13 is pending formal closure** (see Section 16).
+**Sprint 13 is formally closed.**
 
 ## 2. Objective
 
@@ -198,8 +198,26 @@ source gate rejects before acquisition), and both `--max-runs` without
 at the real process boundary.
 
 The final repository-wide verification, required for closure and run
-after this completion report itself is merged, will be recorded in
-Section 16 below at closure time.
+after this completion report itself was merged, on
+`d8c7bd234a1ed83a9e40283d6a04ca62ba868703`, confirmed the same result:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 870 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 94.70%, against the configured 70% threshold
+- `uv lock --check`: passed
+- pre-commit: all hooks passed
+- Critical findings: 0
+- Major findings: 0
+
+The real GitHub Actions pipeline confirmed the same merged state
+independently: both the `pull_request`-event run for this completion
+report's own PR
+(`https://github.com/muhammadarifalfani/aa-crawler/actions/runs/34104497406`)
+and the subsequent `push`-event run on `main`
+(`https://github.com/muhammadarifalfani/aa-crawler/actions/runs/34104699065`)
+completed with a `success` conclusion.
 
 ## 10. Security and safety review
 
@@ -247,7 +265,7 @@ reopen the Sprint 12 completion record.
 - PR #87 — `--interval`/`--max-runs` implementation and tests (unit and
   real end-to-end integration)
 - PR #88 — README and Engineering Standards alignment
-- PR #(pending) — Sprint 13 completion report (this document)
+- PR #89 — Sprint 13 completion report
 
 ## 14. Sprint 13 closure checklist
 
@@ -269,11 +287,11 @@ reopen the Sprint 12 completion record.
 - [x] Independent manual real-process smoke test performed
 - [x] README aligned
 - [x] Engineering Standards aligned
-- [ ] Sprint 13 completion report created (this document)
-- [ ] Sprint 13 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 13 formally closed
+- [x] Sprint 13 completion report created
+- [x] Sprint 13 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 13 formally closed
 
 ## 15. Provisional post-Sprint-13 direction
 
@@ -293,8 +311,10 @@ itself, per the project owner's own stated direction.
 
 ## 16. Completion statement
 
-This report will be merged, local `main` will be synchronized cleanly
-with `origin/main`, and the final repository-wide quality gate will be
-recorded here at closure time.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `d8c7bd234a1ed83a9e40283d6a04ca62ba868703`, and the final
+repository-wide quality gate — both the local command sequence and the
+real GitHub Actions pipeline itself — passed on that merged state with no
+Critical or Major findings.
 
-**Sprint 13 is pending formal closure.**
+**Sprint 13 is formally closed.**
