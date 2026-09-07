@@ -11,7 +11,7 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5 through 17 are complete and closed. Sprint 10
+**Current status:** Sprints 5 through 18 are complete and closed. Sprint 10
 (CLI-triggered persistence) added ADR-027: the CLI gained one optional
 `--output` argument that reuses the existing `FileCrawlResultSink`, with
 integration verification confirming default CLI behavior (no `--output`) is
@@ -52,7 +52,18 @@ required, mirroring Sprint 11's Kompas precedent) — bringing the current
 production source count to three. Detik's `jsonld_article` parser-family
 assignment follows the existing convention but has not yet been confirmed
 against a live fetch, consistent with this project's standing
-no-live-network-request testing constraint.
+no-live-network-request testing constraint. Sprint 18 added security
+scanning to the CI pipeline: ruff's `"S"` rule category (flake8-bandit-
+equivalent static analysis) is now enabled with zero new dependency and
+zero new CI step, since `ruff check` already runs in both pre-commit and
+CI; a repo-wide preview confirmed zero findings in `src/` once `tests/`
+is excluded from the assert/hardcoded-password heuristics that expectedly
+false-positive there. `pip-audit` was added as a new CI-only step
+(mirroring `uv lock --check`'s existing CI-only precedent) auditing the
+locked dependency set against known CVE databases; no new ADR was
+authored for either change, since both are dev-tooling additions with no
+runtime dependency for `aa_crawler` itself, mirroring Sprint 12's own
+CI-pipeline precedent.
 
 ## Current capabilities
 
@@ -91,8 +102,10 @@ no-live-network-request testing constraint.
   resolving and composing identically through the declarative source
   architecture
 - A GitHub Actions CI pipeline (`.github/workflows/ci.yml`) that runs
-  `uv lock --check`, the full pre-commit hook suite, and coverage-enforced
-  tests on every push and pull request targeting `main`
+  `uv lock --check`, the full pre-commit hook suite (now including
+  ruff's `"S"` static-security-analysis rules), coverage-enforced tests,
+  and a `pip-audit` dependency-vulnerability check on every push and pull
+  request targeting `main`
 - An optional CLI `--interval SECONDS` / `--max-runs N` scheduled crawl
   mode (ADR-028) that repeats the same synchronous crawl on one reused
   `ApplicationRuntime`, with a documented recoverable-vs-terminal
@@ -728,6 +741,7 @@ invocations.
 | **Sprint 15** | SQLite crawl result sink (`SqliteCrawlResultSink`) | **Completed** |
 | **Sprint 16** | CLI sink selection (`--sink {file,sqlite}`) | **Completed** |
 | **Sprint 17** | Third production source activation (Detik enabled) | **Completed** |
+| **Sprint 18** | CI security scanning (ruff `"S"`, `pip-audit`) | **Completed** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/
