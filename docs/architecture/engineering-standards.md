@@ -126,7 +126,8 @@ src/aa_crawler/
 ├── cli/               # Synchronous process boundary around the application runtime
 │   ├── __init__.py    # Argument parsing and public main()
 │   ├── app.py         # Bootstrap → runtime → crawl → exit-code mapping (single-shot)
-│   └── scheduler.py   # Bootstrap → reused runtime → repeated crawl (scheduled, ADR-028)
+│   ├── scheduler.py   # Bootstrap → reused runtime → repeated crawl (scheduled, ADR-028)
+│   └── batch.py       # Bootstrap → reused runtime → per-URL pass (batch, ADR-029)
 ├── configuration/     # Settings, loading, and runtime paths
 ├── observability/     # Logging, context, and redaction
 ├── identity/          # Validated immutable request identity
@@ -437,7 +438,7 @@ ADR-023 around the existing application and runtime layers. It owns:
   sequence;
 - serializing each successful `ArticleCrawlService.crawl()` result — one
   per process in single-shot mode, one per iteration in scheduled mode
-  (ADR-028);
+  (ADR-028), or one per URL per pass in batch mode (ADR-029);
 - stdout/log channel separation; and
 - a small, CLI-local exit-code translation.
 
@@ -550,6 +551,36 @@ introduced. ADR-017 (metadata portability) and ADR-019 (future execution
 families) remain exactly as Deferred/Proposed as before this sprint — a
 scheduler that repeats an existing synchronous crawl does not meet
 either's own named review trigger.
+
+#### Batch/multi-URL mode
+
+`aa_crawler.cli.batch` implements ADR-029: an optional `--urls-file PATH`
+argument, mutually exclusive with the positional `url`, that crawls a
+list of URLs — one absolute HTTPS URL per line, comments and blank lines
+skipped — via `run_batch_crawl()` (one pass) or `run_scheduled_batch_crawl()`
+(repeated passes, reusing `run_scheduled_crawl()`'s injectable-sleep and
+one-reused-`ApplicationRuntime` pattern). `--max-runs` bounds the number
+of full passes over the list, not the number of individual URLs.
+
+The per-URL failure policy deliberately diverges from ADR-028's for one
+condition: `UnsupportedSourceError` is **recoverable** in batch mode
+(logged, that URL is skipped, the pass continues) rather than terminal —
+one bad URL among many should not abort the rest of the list, unlike
+single-URL scheduled mode, where retrying the *same* unsupported URL
+forever would be pointless. `CrawlerError` remains recoverable (as in
+ADR-028); a post-crawl `PersistenceWriteError` and any other unexpected
+`Exception` remain terminal, stopping the batch/run immediately with the
+same CLI-local exit code single-URL mode already defines. No new exit
+code is introduced. Partial success (some URLs skipped, none terminal) is
+still process exit `0`, distinguishable from full success only via
+stdout/log output — introducing a distinct partial-failure exit code was
+considered and rejected in ADR-029 as an unnecessary addition to the
+CLI-local exit-code mapping.
+
+`run_crawl()` and `run_scheduled_crawl()` are completely unmodified by
+this sprint; `aa_crawler.cli.batch` is new, additive code that duplicates
+their shape rather than generalizing them, a deliberate ADR-029 decision
+to avoid refactoring already-tested single-URL code paths.
 
 ### Persistence boundary
 
@@ -1270,6 +1301,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 11 | Second production source activation completed: Kompas enabled as a project-governance decision under ADR-020's ordinary-onboarding pre-authorization (no new ADR), disabled-source test coverage decoupled onto a synthetic profile, integration verification complete, documentation aligned |
 | Sprint 12 | CI pipeline completed: `.github/workflows/ci.yml` added (no new ADR — automates already-approved practice, meets no ADR trigger), verified green on both a pull request and a push to `main`, integration verification complete, documentation aligned |
 | Sprint 13 | CLI scheduled crawl mode completed: ADR-028 accepted, `--interval`/`--max-runs` added to `aa_crawler.cli.scheduler`, recoverable-vs-terminal per-iteration failure policy implemented and tested (100% coverage of the new module), real-pipeline integration verification complete, documentation aligned |
+| Sprint 14 | CLI batch/multi-URL input completed: ADR-029 accepted, `--urls-file` added to `aa_crawler.cli.batch`, per-URL failure policy implemented and tested (100% coverage of the new module) with `UnsupportedSourceError` deliberately recoverable (diverging from ADR-028), real-pipeline integration verification complete, documentation aligned |
 
 ### 15.3 ADR Triggers
 
