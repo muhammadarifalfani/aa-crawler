@@ -2,14 +2,16 @@
 
 This package is the thin process boundary around the existing
 ``bootstrap_application()``, ``create_application_runtime()``, and
-``ArticleCrawlService`` layers. It parses one URL argument, delegates
-execution to :mod:`aa_crawler.cli.app`, and returns the resulting process
-exit code. It owns no source, robots, retry, identity, or parser governance.
+``ArticleCrawlService`` layers. It parses one URL argument (plus one
+optional ``--output`` path, per ADR-027) and delegates execution to
+:mod:`aa_crawler.cli.app`, returning the resulting process exit code. It
+owns no source, robots, retry, identity, parser, or persistence governance.
 """
 
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aa_crawler.cli.app import run_crawl
@@ -32,11 +34,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "url",
         help="Absolute HTTPS article URL to crawl.",
     )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help=(
+            "Optional file path to also append the crawl result to, as one "
+            "JSON Lines record (ADR-027). Omitted by default: no file is "
+            "written unless this is supplied."
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Parse one URL argument and execute a single synchronous article crawl.
+    """Parse CLI arguments and execute a single synchronous article crawl.
 
     Args:
         argv: Explicit argument vector for testing. When omitted, arguments
@@ -46,4 +59,4 @@ def main(argv: Sequence[str] | None = None) -> int:
         The CLI-local process exit code produced by :func:`run_crawl`.
     """
     args = _build_parser().parse_args(argv)
-    return run_crawl(args.url)
+    return run_crawl(args.url, output=args.output)

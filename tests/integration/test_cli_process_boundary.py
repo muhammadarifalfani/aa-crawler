@@ -632,3 +632,67 @@ def test_cli_process_boundary_correlation_context_does_not_leak_across_invocatio
     assert first_exit == 0
     assert second_exit == 0
     assert fetcher.calls == [(_CNN_URL, None), (_CNN_URL, None)]
+
+
+# --- 16. CLI-triggered persistence (ADR-027) --------------------------------
+
+
+def test_cli_process_boundary_output_flag_persists_the_real_result(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """--output must durably write the exact item the real pipeline produced."""
+    _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = main([_CNN_URL, "--output", str(destination)])
+
+    captured = capsys.readouterr()
+    stdout_payload = json.loads(captured.out)
+    assert exit_code == 0
+    assert stdout_payload["source"] == "cnn_indonesia"
+    lines = destination.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == stdout_payload
+
+
+def test_cli_process_boundary_default_invocation_writes_no_file(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """Omitting --output must leave the working directory untouched by writes
+    beyond bootstrap's own runtime directories.
+    """
+    _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main([_CNN_URL])
+
+    capsys.readouterr()
+    assert exit_code == 0
+    written_files = [path for path in tmp_path.rglob("*") if path.is_file()]
+    assert written_files == []
+
+
+def test_cli_process_boundary_persistence_failure_still_prints_real_stdout(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """A destination whose parent does not exist must fail only persistence,
+    never the already-completed crawl.
+    """
+    _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    destination = tmp_path / "missing-directory" / "results.jsonl"
+
+    exit_code = main([_CNN_URL, "--output", str(destination)])
+
+    captured = capsys.readouterr()
+    assert exit_code == cli_app_module.EXIT_PERSISTENCE_FAILURE
+    payload = json.loads(captured.out)
+    assert payload["source"] == "cnn_indonesia"
+    assert not destination.exists()
