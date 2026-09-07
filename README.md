@@ -11,7 +11,7 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5 through 16 are complete and closed. Sprint 10
+**Current status:** Sprints 5 through 17 are complete and closed. Sprint 10
 (CLI-triggered persistence) added ADR-027: the CLI gained one optional
 `--output` argument that reuses the existing `FileCrawlResultSink`, with
 integration verification confirming default CLI behavior (no `--output`) is
@@ -45,6 +45,14 @@ corresponding sink class once in `main()` and reuses it across
 single-shot, scheduled, batch, and scheduled-batch mode — closing that
 exact gap. `FileCrawlResultSink` remains completely unmodified, and every
 existing invocation's behavior is unchanged when `--sink` is omitted.
+Sprint 17 activated Detik (`news.detik.com` only) as a third real
+production source — another project-owner governance decision under
+ADR-020's ordinary-source-onboarding pre-authorization (no new ADR
+required, mirroring Sprint 11's Kompas precedent) — bringing the current
+production source count to three. Detik's `jsonld_article` parser-family
+assignment follows the existing convention but has not yet been confirmed
+against a live fetch, consistent with this project's standing
+no-live-network-request testing constraint.
 
 ## Current capabilities
 
@@ -79,8 +87,9 @@ existing invocation's behavior is unchanged when `--sink` is omitted.
 - An optional CLI `--output PATH` flag (ADR-027) that appends the crawl
   result to a file via `FileCrawlResultSink`, off by default; default CLI
   behavior is unchanged when it is omitted
-- Two enabled production sources (CNN Indonesia, Kompas) resolving and
-  composing identically through the declarative source architecture
+- Three enabled production sources (CNN Indonesia, Kompas, Detik)
+  resolving and composing identically through the declarative source
+  architecture
 - A GitHub Actions CI pipeline (`.github/workflows/ci.yml`) that runs
   `uv lock --check`, the full pre-commit hook suite, and coverage-enforced
   tests on every push and pull request targeting `main`
@@ -520,6 +529,7 @@ adapter should be introduced only when observed evidence requires it.
 |---|---|---|---|---|
 | CNN Indonesia | Enabled | `jsonld_article` | None | `www.cnnindonesia.com` |
 | Kompas | Enabled | `jsonld_article` | None | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` |
+| Detik | Enabled | `jsonld_article` | None | `news.detik.com` |
 
 Enabled and disabled states record project governance. They do not replace
 `robots.txt`, publisher policy, legal review, rate-limit approval, or
@@ -717,6 +727,7 @@ invocations.
 | **Sprint 14** | CLI batch/multi-URL input (`--urls-file`) | **Completed** |
 | **Sprint 15** | SQLite crawl result sink (`SqliteCrawlResultSink`) | **Completed** |
 | **Sprint 16** | CLI sink selection (`--sink {file,sqlite}`) | **Completed** |
+| **Sprint 17** | Third production source activation (Detik enabled) | **Completed** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/

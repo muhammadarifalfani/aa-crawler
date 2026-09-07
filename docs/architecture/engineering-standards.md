@@ -262,8 +262,8 @@ global dependency construction are prohibited.
 - Ordinary compatible sources are added profile-first and reuse the generic
   parser. A publisher-specific parser or adapter requires observed evidence;
   non-null adapter keys remain unsupported.
-- Three parser families exist under ADR-025/ADR-026: `jsonld_article` (both
-  current reference profiles), `generic_json_article`, and
+- Three parser families exist under ADR-025/ADR-026: `jsonld_article` (all
+  three current reference profiles), `generic_json_article`, and
   `microdata_article` — the latter two are synthetic proof-of-concept
   families exercised only through in-test fixtures. No production profile
   uses either.
@@ -272,17 +272,21 @@ Profile existence does not authorize network crawling. `enabled=True` makes a
 source available to normal lookup; `enabled=False` retains known state while
 blocking normal lookup and composition. Enablement does not replace robots.txt,
 publisher-policy or legal review, rate limits, or operational safety controls.
-The current reference declarations enable both CNN Indonesia and Kompas.
-Kompas was activated in Sprint 11 as an explicit project-owner governance
-decision, made after the project owner confirmed there was no objection to
-crawling it; this required no new ADR because ADR-020 pre-authorizes ordinary
-onboarding of a structurally compatible source. These values remain project
+The current reference declarations enable CNN Indonesia, Kompas, and
+Detik. Kompas was activated in Sprint 11 and Detik in Sprint 17, both as
+explicit project-owner governance decisions, each made after the project
+owner confirmed there was no objection to crawling that source; neither
+required a new ADR because ADR-020 pre-authorizes ordinary onboarding of
+a structurally compatible source. Detik's exact host is deliberately
+narrow (`news.detik.com` only) — its other verticals (e.g.
+`finance.detik.com`) were not approved. These values remain project
 governance state, not universal policy.
 
 | Source | Exact hosts | Parser family | Adapter key | Enabled |
 |--------|-------------|---------------|-------------|---------|
 | CNN Indonesia | `www.cnnindonesia.com` | `jsonld_article` | `None` | Yes |
 | Kompas | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` | `jsonld_article` | `None` | Yes |
+| Detik | `news.detik.com` | `jsonld_article` | `None` | Yes |
 
 The Sprint 4 source-composition integration remains a supported lower-level
 flow:
@@ -1338,6 +1342,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 14 | CLI batch/multi-URL input completed: ADR-029 accepted, `--urls-file` added to `aa_crawler.cli.batch`, per-URL failure policy implemented and tested (100% coverage of the new module) with `UnsupportedSourceError` deliberately recoverable (diverging from ADR-028), real-pipeline integration verification complete, documentation aligned |
 | Sprint 15 | SQLite crawl result sink completed: ADR-030 accepted, `SqliteCrawlResultSink` added to `aa_crawler.persistence` using only the standard-library `sqlite3` module, upserting by `requested_url` for real idempotency (100% coverage of the new module), `FileCrawlResultSink` unmodified, CLI wiring explicitly deferred, integration verification complete (including a real-process smoke test proving idempotent upsert), documentation aligned |
 | Sprint 16 | CLI sink selection completed: ADR-031 accepted, `--sink {file,sqlite}` added to `cli/__init__.py`, resolved once and threaded through all four crawl entry functions as an injectable `sink_factory` defaulting to `FileCrawlResultSink` (every existing invocation's behavior unchanged when `--sink` is omitted), real-pipeline integration verification complete (including a real `sqlite3` database produced through the CLI), documentation aligned |
+| Sprint 17 | Third production source activation completed: Detik (`news.detik.com` only) enabled as a project-governance decision under ADR-020's ordinary-onboarding pre-authorization (no new ADR), per-profile and composition test coverage added mirroring CNN/Kompas, `jsonld_article` compatibility assumed but not live-verified, integration verification complete, documentation aligned |
 
 ### 15.3 ADR Triggers
 
