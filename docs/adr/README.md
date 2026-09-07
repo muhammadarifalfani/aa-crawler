@@ -12,7 +12,7 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
-Current totals: 24 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+Current totals: 25 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 ## Numbering and filenames
 
@@ -57,3 +57,4 @@ that supersedes the historical record.
 | [ADR-029](0029-cli-batch-url-input.md) | CLI batch/multi-URL input | Accepted | Add an optional `--urls-file PATH` CLI argument, mutually exclusive with the positional URL, that crawls a list of URLs once (or repeatedly with `--interval`), with a per-URL recoverable-vs-terminal policy where UnsupportedSourceError is recoverable (unlike ADR-028) and no new partial-failure exit code | `cli/batch.py`, `cli/__init__.py` | Concurrent per-URL crawling within one pass, a remote/dynamic URL-list source, or a caller-visible partial-success distinction |
 | [ADR-030](0030-sqlite-crawl-result-sink.md) | SQLite crawl result sink | Accepted | Add a second concrete persistence sink using only the standard-library `sqlite3` module, upserting by `requested_url` for real idempotency, with no CLI wiring in this sprint (explicitly deferred, mirroring ADR-024→ADR-027) | `persistence/sqlite_sink.py` | CLI wiring for sink selection is proposed, a concurrent multi-process write requirement is identified, or a typed-storage requirement beyond an opaque JSON payload is identified |
 | [ADR-031](0031-cli-sink-selection.md) | CLI sink selection | Accepted | Add an optional `--sink {file,sqlite}` CLI argument, valid only with `--output`, resolved once in `main()` and threaded through all four crawl entry functions as an injectable `sink_factory` defaulting to `FileCrawlResultSink`, preserving every existing invocation's exact behavior when omitted | `cli/__init__.py`, `cli/app.py`, `cli/scheduler.py`, `cli/batch.py` | A third concrete sink is proposed, a requirement to persist to more than one sink at once is identified, or `--output`'s own meaning needs to change |
+| [ADR-032](0032-bounded-redirect-following.md) | Bounded redirect following | Accepted | Add a manual, robots-rechecked redirect loop inside `HtmlFetcher.fetch()` (capped at 5 hops), keeping `HttpClient`'s `follow_redirects` unset so every hop still passes through robots.txt, and letting the existing `final_url`/`SourceBoundaryError` mechanism in `ArticleCrawlService` finally check a transport-produced value | `html/fetcher.py`, `crawler/errors.py` | A non-GET request method is introduced, a real requirement emerges for per-hop domain validation during the chase, or the 5-hop cap proves wrong against real observed redirect chains |
