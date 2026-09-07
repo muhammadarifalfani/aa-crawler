@@ -25,6 +25,7 @@ from aa_crawler.cli.app import (
 from aa_crawler.configuration import LoggingSetupError, MissingSettingError
 from aa_crawler.crawler import CrawlerItem, RequestError
 from aa_crawler.observability import get_correlation_id
+from aa_crawler.persistence import FileCrawlResultSink, SqliteCrawlResultSink
 from aa_crawler.sources import SourceRegistryError
 
 if TYPE_CHECKING:
@@ -133,7 +134,10 @@ def test_valid_single_url_is_parsed_and_forwarded_unchanged(
     received: list[str] = []
     received_output: list[Path | None] = []
 
-    def fake_run_crawl(url: str, *, output: Path | None = None) -> int:
+    def fake_run_crawl(
+        url: str, *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del sink_factory
         received.append(url)
         received_output.append(output)
         return EXIT_SUCCESS
@@ -153,8 +157,10 @@ def test_output_argument_is_parsed_and_forwarded_as_a_path(
 ) -> None:
     received_output: list[Path | None] = []
 
-    def fake_run_crawl(url: str, *, output: Path | None = None) -> int:
-        del url
+    def fake_run_crawl(
+        url: str, *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del url, sink_factory
         received_output.append(output)
         return EXIT_SUCCESS
 
@@ -175,8 +181,10 @@ def test_default_invocation_dispatches_to_single_shot_run_crawl(
 ) -> None:
     single_shot_calls: list[str] = []
 
-    def fake_run_crawl(url: str, *, output: Path | None = None) -> int:
-        del output
+    def fake_run_crawl(
+        url: str, *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del output, sink_factory
         single_shot_calls.append(url)
         return EXIT_SUCCESS
 
@@ -208,7 +216,9 @@ def test_interval_argument_dispatches_to_scheduled_crawl_not_single_shot(
         interval: float,
         output: Path | None = None,
         max_runs: int | None = None,
+        sink_factory: object = None,
     ) -> int:
+        del sink_factory
         received["url"] = url
         received["interval"] = interval
         received["output"] = output
@@ -240,7 +250,9 @@ def test_interval_output_and_max_runs_are_all_forwarded_together(
         interval: float,
         output: Path | None = None,
         max_runs: int | None = None,
+        sink_factory: object = None,
     ) -> int:
+        del sink_factory
         received["url"] = url
         received["interval"] = interval
         received["output"] = output
@@ -328,7 +340,10 @@ def test_urls_file_argument_dispatches_to_batch_crawl_not_single_shot(
     )
     received: dict[str, object] = {}
 
-    def fake_run_batch_crawl(urls: list[str], *, output: Path | None = None) -> int:
+    def fake_run_batch_crawl(
+        urls: list[str], *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del sink_factory
         received["urls"] = list(urls)
         received["output"] = output
         return EXIT_SUCCESS
@@ -364,7 +379,9 @@ def test_urls_file_with_interval_dispatches_to_scheduled_batch_crawl(
         interval: float,
         output: Path | None = None,
         max_runs: int | None = None,
+        sink_factory: object = None,
     ) -> int:
+        del sink_factory
         received["urls"] = list(urls)
         received["interval"] = interval
         received["output"] = output
@@ -415,8 +432,10 @@ def test_urls_file_parses_urls_skipping_blank_lines_and_comments(
     )
     received: dict[str, object] = {}
 
-    def fake_run_batch_crawl(urls: list[str], *, output: Path | None = None) -> int:
-        del output
+    def fake_run_batch_crawl(
+        urls: list[str], *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del output, sink_factory
         received["urls"] = list(urls)
         return EXIT_SUCCESS
 
@@ -461,6 +480,203 @@ def test_max_runs_with_urls_file_but_without_interval_is_rejected(
         main(["--urls-file", str(urls_file), "--max-runs", "3"])
 
     assert excinfo.value.code == 2
+
+
+# --- Sink selection dispatch (ADR-031) ---------------------------------------
+
+
+def test_sink_without_output_is_rejected_by_argument_parsing() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main([_CNN_URL, "--sink", "sqlite"])
+
+    assert excinfo.value.code == 2
+
+
+def test_invalid_sink_value_is_rejected_by_argument_parsing(tmp_path: Path) -> None:
+    destination = tmp_path / "results.db"
+
+    with pytest.raises(SystemExit) as excinfo:
+        main([_CNN_URL, "--output", str(destination), "--sink", "postgres"])
+
+    assert excinfo.value.code == 2
+
+
+def test_sink_omitted_resolves_to_file_sink_factory(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    received: dict[str, object] = {}
+
+    def fake_run_crawl(
+        url: str, *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del url, output
+        received["sink_factory"] = sink_factory
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_crawl", fake_run_crawl)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = main([_CNN_URL, "--output", str(destination)])
+
+    assert exit_code == EXIT_SUCCESS
+    assert received["sink_factory"] is FileCrawlResultSink
+
+
+def test_sink_file_explicit_resolves_to_file_sink_factory(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    received: dict[str, object] = {}
+
+    def fake_run_crawl(
+        url: str, *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del url, output
+        received["sink_factory"] = sink_factory
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_crawl", fake_run_crawl)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = main([_CNN_URL, "--output", str(destination), "--sink", "file"])
+
+    assert exit_code == EXIT_SUCCESS
+    assert received["sink_factory"] is FileCrawlResultSink
+
+
+def test_sink_sqlite_resolves_to_sqlite_sink_factory_for_single_shot(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    received: dict[str, object] = {}
+
+    def fake_run_crawl(
+        url: str, *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del url, output
+        received["sink_factory"] = sink_factory
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_crawl", fake_run_crawl)
+    destination = tmp_path / "results.db"
+
+    exit_code = main([_CNN_URL, "--output", str(destination), "--sink", "sqlite"])
+
+    assert exit_code == EXIT_SUCCESS
+    assert received["sink_factory"] is SqliteCrawlResultSink
+
+
+def test_sink_sqlite_resolves_to_sqlite_sink_factory_for_scheduled_mode(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    received: dict[str, object] = {}
+
+    def fake_run_scheduled_crawl(
+        url: str,
+        *,
+        interval: float,
+        output: Path | None = None,
+        max_runs: int | None = None,
+        sink_factory: object = None,
+    ) -> int:
+        del url, interval, output, max_runs
+        received["sink_factory"] = sink_factory
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_scheduled_crawl", fake_run_scheduled_crawl)
+    destination = tmp_path / "results.db"
+
+    exit_code = main(
+        [
+            _CNN_URL,
+            "--output",
+            str(destination),
+            "--sink",
+            "sqlite",
+            "--interval",
+            "5",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert received["sink_factory"] is SqliteCrawlResultSink
+
+
+def test_sink_sqlite_resolves_to_sqlite_sink_factory_for_batch_mode(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(f"{_CNN_URL}\n", encoding="utf-8")
+    received: dict[str, object] = {}
+
+    def fake_run_batch_crawl(
+        urls: list[str], *, output: Path | None = None, sink_factory: object = None
+    ) -> int:
+        del urls, output
+        received["sink_factory"] = sink_factory
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_batch_crawl", fake_run_batch_crawl)
+    destination = tmp_path / "results.db"
+
+    exit_code = main(
+        [
+            "--urls-file",
+            str(urls_file),
+            "--output",
+            str(destination),
+            "--sink",
+            "sqlite",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert received["sink_factory"] is SqliteCrawlResultSink
+
+
+def test_sink_sqlite_resolves_to_sqlite_sink_factory_for_scheduled_batch_mode(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(f"{_CNN_URL}\n", encoding="utf-8")
+    received: dict[str, object] = {}
+
+    def fake_run_scheduled_batch_crawl(
+        urls: list[str],
+        *,
+        interval: float,
+        output: Path | None = None,
+        max_runs: int | None = None,
+        sink_factory: object = None,
+    ) -> int:
+        del urls, interval, output, max_runs
+        received["sink_factory"] = sink_factory
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(
+        cli_module, "run_scheduled_batch_crawl", fake_run_scheduled_batch_crawl
+    )
+    destination = tmp_path / "results.db"
+
+    exit_code = main(
+        [
+            "--urls-file",
+            str(urls_file),
+            "--output",
+            str(destination),
+            "--sink",
+            "sqlite",
+            "--interval",
+            "5",
+        ]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert received["sink_factory"] is SqliteCrawlResultSink
 
 
 # --- Successful execution ----------------------------------------------------

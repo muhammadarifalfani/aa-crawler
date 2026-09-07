@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from typing import TYPE_CHECKING
 
 import pytest
@@ -839,3 +840,54 @@ def test_cli_process_boundary_scheduled_batch_mode_produces_json_and_success_exi
     assert payload["source"] == "cnn_indonesia"
     assert fetcher.calls == [(_CNN_URL, None)]
     assert clients[0].close_count == 1
+
+
+# --- 19. CLI sink selection (ADR-031) -----------------------------------------
+
+
+def test_cli_process_boundary_sink_sqlite_persists_via_the_real_sqlite3_module(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """--sink sqlite reaches the real pipeline and a real SQLite database."""
+    _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    destination = tmp_path / "results.db"
+
+    exit_code = main([_CNN_URL, "--output", str(destination), "--sink", "sqlite"])
+
+    captured = capsys.readouterr()
+    stdout_payload = json.loads(captured.out.strip())
+    assert exit_code == 0
+    connection = sqlite3.connect(destination)
+    try:
+        rows = list(
+            connection.execute("SELECT requested_url, payload FROM crawl_results")
+        )
+    finally:
+        connection.close()
+    assert len(rows) == 1
+    requested_url, payload = rows[0]
+    assert requested_url == _CNN_URL
+    assert json.loads(payload) == stdout_payload
+
+
+def test_cli_process_boundary_sink_omitted_still_uses_the_file_sink(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """Omitting --sink preserves ADR-027's exact original file-sink behavior."""
+    _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = main([_CNN_URL, "--output", str(destination)])
+
+    captured = capsys.readouterr()
+    stdout_payload = json.loads(captured.out.strip())
+    assert exit_code == 0
+    lines = destination.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == stdout_payload
