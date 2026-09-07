@@ -11,12 +11,15 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5 through 9 are complete and closed. Sprint 10
-(CLI-triggered persistence) is in progress: ADR-027 is Accepted, the CLI
-gained one optional `--output` argument that reuses the existing
-`FileCrawlResultSink`, and integration verification confirmed default CLI
-behavior (no `--output`) is unchanged while the new path works end-to-end
-through the real pipeline.
+**Current status:** Sprints 5 through 11 are complete and closed. Sprint 10
+(CLI-triggered persistence) added ADR-027: the CLI gained one optional
+`--output` argument that reuses the existing `FileCrawlResultSink`, with
+integration verification confirming default CLI behavior (no `--output`) is
+unchanged while the new path works end-to-end through the real pipeline.
+Sprint 11 activated Kompas as a second real production source — a project-
+governance decision (no new ADR required; ADR-020 pre-authorizes ordinary
+source onboarding) — and both current production sources now resolve and
+compose normally.
 
 ## Current capabilities
 
@@ -312,7 +315,7 @@ adapter should be introduced only when observed evidence requires it.
 | Source | State | Parser | Adapter | Exact hosts |
 |---|---|---|---|---|
 | CNN Indonesia | Enabled | `jsonld_article` | None | `www.cnnindonesia.com` |
-| Kompas | Disabled | `jsonld_article` | None | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` |
+| Kompas | Enabled | `jsonld_article` | None | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` |
 
 Enabled and disabled states record project governance. They do not replace
 `robots.txt`, publisher policy, legal review, rate-limit approval, or
@@ -500,7 +503,8 @@ invocations.
 | **Sprint 7** | Application-level persistence boundary | **Completed** |
 | **Sprint 8** | Extensible parser-family composition seam | **Completed** |
 | **Sprint 9** | Microdata article parser family | **Completed** |
-| **Sprint 10** | CLI-triggered persistence | **In progress** |
+| **Sprint 10** | CLI-triggered persistence | **Completed** |
+| **Sprint 11** | Second production source activation (Kompas enabled) | **Completed** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/

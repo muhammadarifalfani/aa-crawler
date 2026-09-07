@@ -267,13 +267,17 @@ Profile existence does not authorize network crawling. `enabled=True` makes a
 source available to normal lookup; `enabled=False` retains known state while
 blocking normal lookup and composition. Enablement does not replace robots.txt,
 publisher-policy or legal review, rate limits, or operational safety controls.
-The current reference declarations enable CNN Indonesia and disable Kompas;
-these values are project governance state, not universal policy.
+The current reference declarations enable both CNN Indonesia and Kompas.
+Kompas was activated in Sprint 11 as an explicit project-owner governance
+decision, made after the project owner confirmed there was no objection to
+crawling it; this required no new ADR because ADR-020 pre-authorizes ordinary
+onboarding of a structurally compatible source. These values remain project
+governance state, not universal policy.
 
 | Source | Exact hosts | Parser family | Adapter key | Enabled |
 |--------|-------------|---------------|-------------|---------|
 | CNN Indonesia | `www.cnnindonesia.com` | `jsonld_article` | `None` | Yes |
-| Kompas | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` | `jsonld_article` | `None` | No |
+| Kompas | `www.kompas.com`, `nasional.kompas.com`, `surabaya.kompas.com` | `jsonld_article` | `None` | Yes |
 
 The Sprint 4 source-composition integration remains a supported lower-level
 flow:
@@ -1221,8 +1225,8 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 7 | Application-level persistence boundary completed: ADR-024 accepted, persistence port and file sink implemented, integration verification complete, documentation aligned |
 | Sprint 8 | Extensible parser-family composition seam completed: ADR-025 accepted, SourceProfile/ParserComposer support two closed parser families, integration verification complete, documentation aligned |
 | Sprint 9 | Microdata article parser family completed: ADR-026 accepted, SourceProfile/ParserComposer support a third closed parser family, integration verification complete, documentation aligned |
-| Sprint 10 | CLI-triggered persistence in progress: ADR-027 accepted, CLI gained an optional --output argument reusing FileCrawlResultSink, integration verification complete, documentation alignment in progress |
-| Sprint 11 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging, performance benchmarks, security scanning (`bandit`), dependency audit automation |
+| Sprint 10 | CLI-triggered persistence completed: ADR-027 accepted, CLI gained an optional --output argument reusing FileCrawlResultSink, integration verification complete, documentation aligned |
+| Sprint 11 | Second production source activation completed: Kompas enabled as a project-governance decision under ADR-020's ordinary-onboarding pre-authorization (no new ADR), disabled-source test coverage decoupled onto a synthetic profile, integration verification complete, documentation aligned |
 
 ### 15.3 ADR Triggers
 
