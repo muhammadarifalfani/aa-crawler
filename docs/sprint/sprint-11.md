@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 11 implementation is complete. Integration verification is
-complete. Documentation alignment is complete. This completion report will
-be merged, local `main` will subsequently be synchronized cleanly with
-`origin/main`, and a final repository-wide verification will run on that
-merged state before formal closure.
+complete. Documentation alignment is complete. This completion report was
+merged, local `main` was subsequently synchronized cleanly with
+`origin/main`, and the final repository-wide verification (Section 8)
+passed on that merged state with no Critical or Major findings.
 
-**Sprint 11 is pending formal closure** (see Section 16).
+**Sprint 11 is formally closed.**
 
 ## 2. Objective
 
@@ -166,8 +166,18 @@ state (`735d016ec03d1b823ce4f3b5c39502174889e6fe`) confirmed:
 - Major findings: 0
 
 The final repository-wide verification, required for closure and run after
-this completion report itself is merged, will be recorded in Section 16
-below at closure time.
+this completion report itself was merged, on
+`53ad68d47a12615c489732558ea3be25d331d999`, confirmed the same result:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 839 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 94.48%, against the configured 70% threshold
+- `uv lock --check`: passed
+- pre-commit: all hooks passed
+- Critical findings: 0
+- Major findings: 0
 
 ## 9. Security and safety review
 
@@ -252,8 +262,7 @@ does not revise or reopen the Sprint 10 completion record.
 - PR #78 — Kompas enabled as a real second production source; disabled-
   source test coverage decoupled onto a synthetic profile
 - PR #79 — README and Engineering Standards alignment
-- PR #(pending) — Sprint 11 completion report (this document)
-- PR #(pending) — Sprint 11 formal closure
+- PR #80 — Sprint 11 completion report
 
 ## 15. Sprint 11 closure checklist
 
@@ -269,11 +278,11 @@ does not revise or reopen the Sprint 10 completion record.
       passing against the real pipeline
 - [x] README aligned
 - [x] Engineering Standards aligned
-- [ ] Sprint 11 completion report created (this document)
-- [ ] Sprint 11 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 11 formally closed
+- [x] Sprint 11 completion report created
+- [x] Sprint 11 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 11 formally closed
 
 ## 16. Provisional post-Sprint-11 direction
 
@@ -290,3 +299,12 @@ requires its own explicit scope and architecture approval before
 implementation. Social media platforms (e.g. a separate Crawler TikTok or
 Crawler Instagram project) are explicitly out of scope for `aa_crawler`
 itself, per the project owner's own stated direction.
+
+## 17. Completion statement
+
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `53ad68d47a12615c489732558ea3be25d331d999`, and the final
+repository-wide quality gate passed on that merged state with no Critical
+or Major findings.
+
+**Sprint 11 is formally closed.**
