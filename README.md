@@ -11,7 +11,7 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5 through 15 are complete and closed. Sprint 10
+**Current status:** Sprints 5 through 16 are complete and closed. Sprint 10
 (CLI-triggered persistence) added ADR-027: the CLI gained one optional
 `--output` argument that reuses the existing `FileCrawlResultSink`, with
 integration verification confirming default CLI behavior (no `--output`) is
@@ -37,9 +37,14 @@ single-URL scheduled mode. Sprint 15 added ADR-030: a second concrete
 persistence sink, `SqliteCrawlResultSink`, using only the standard-library
 `sqlite3` module (no new runtime dependency) — it upserts by
 `requested_url` instead of appending, giving real idempotency for the
-repeated re-crawls scheduled and batch mode make common. It is not wired
-into the CLI yet (explicitly deferred, mirroring the ADR-024-then-ADR-027
-precedent); `FileCrawlResultSink` is completely unmodified.
+repeated re-crawls scheduled and batch mode make common; CLI wiring was
+explicitly deferred that sprint, mirroring the ADR-024-then-ADR-027
+precedent. Sprint 16 added ADR-031: an optional `--sink {file,sqlite}`
+CLI argument, valid only with `--output`, that resolves to the
+corresponding sink class once in `main()` and reuses it across
+single-shot, scheduled, batch, and scheduled-batch mode — closing that
+exact gap. `FileCrawlResultSink` remains completely unmodified, and every
+existing invocation's behavior is unchanged when `--sink` is omitted.
 
 ## Current capabilities
 
@@ -93,8 +98,12 @@ precedent); `FileCrawlResultSink` is completely unmodified.
 - A second concrete persistence sink, `SqliteCrawlResultSink` (ADR-030),
   using only the standard-library `sqlite3` module — `save()` upserts by
   `requested_url` into one table, replacing the previous row for that URL
-  instead of duplicating it; not wired into the CLI in this sprint, a
-  caller composes it directly
+  instead of duplicating it
+- An optional CLI `--sink {file,sqlite}` argument (ADR-031, valid only
+  with `--output`) that selects which concrete sink `--output` targets,
+  resolved once in `main()` and reused across single-shot, scheduled,
+  batch, and scheduled-batch mode; defaults to `file`, preserving every
+  existing invocation's exact behavior when omitted
 
 ## Current limitations
 
@@ -120,12 +129,12 @@ precedent); `FileCrawlResultSink` is completely unmodified.
   coordination. The CLI's `--output` flag (ADR-027) is the only wiring
   between the CLI and persistence; the application service and runtime
   remain fully unaware of persistence.
-- `FileCrawlResultSink` (the only sink the CLI's `--output` flag can
-  currently trigger) remains append-only with no deduplication or
-  idempotency guarantee. `SqliteCrawlResultSink` (ADR-030) does provide
-  per-`requested_url` idempotency, but is not yet CLI-selectable — a
-  caller must compose it directly in Python; there is still no CLI flag
-  to choose between the two sinks.
+- `FileCrawlResultSink` (the CLI's default sink, and the only one before
+  ADR-031) remains append-only with no deduplication or idempotency
+  guarantee. `SqliteCrawlResultSink` (ADR-030) provides per-`requested_url`
+  idempotency and is now CLI-selectable via `--sink sqlite` (ADR-031).
+  Persisting to both sinks in one invocation is not supported; each
+  invocation targets exactly one destination and one sink.
 - `SqliteCrawlResultSink`'s upsert-by-`requested_url` keeps only the
   latest successful crawl per URL; it does not keep history across
   crawls, and is not safe for concurrent writers from separate processes.
@@ -266,18 +275,24 @@ aa-crawler --urls-file sources.txt -o data/processed/results.jsonl
 
 # Re-crawl the whole list every 5 minutes:
 aa-crawler --urls-file sources.txt --interval 300
+
+# Persist to a SQLite database instead, with real per-URL idempotency
+# (ADR-031, ADR-030) — combines with any of the modes above:
+aa-crawler https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/example-story \
+  -o data/processed/results.db --sink sqlite
 ```
 
 The CLI takes either exactly one positional URL, or a `--urls-file PATH`
 batch of URLs (ADR-029) — mutually exclusive, exactly one is required per
-invocation. It also accepts one optional `-o`/`--output PATH` argument,
-and an optional `-i`/`--interval SECONDS` argument (with an optional
-`--max-runs N` bound, valid only together with `--interval`) that selects
-scheduled crawl mode instead of the default single pass. There are no
-subcommands and no flags that override source, robots, retry, identity, or
-parser behavior; `--output` selects a persistence destination only, and
-`--interval`/`--max-runs`/`--urls-file` select only how many URLs are
-crawled and how often.
+invocation. It also accepts one optional `-o`/`--output PATH` argument, an
+optional `--sink {file,sqlite}` argument (ADR-031, valid only with
+`--output`), and an optional `-i`/`--interval SECONDS` argument (with an
+optional `--max-runs N` bound, valid only together with `--interval`)
+that selects scheduled crawl mode instead of the default single pass.
+There are no subcommands and no flags that override source, robots,
+retry, identity, or parser behavior; `--output`/`--sink` select a
+persistence destination and sink only, and `--interval`/`--max-runs`/
+`--urls-file` select only how many URLs are crawled and how often.
 
 #### Output contract
 
@@ -337,8 +352,8 @@ Because a scheduled run can produce more than one result, stdout's
 contract differs from single-shot mode: one JSON object **per line** per
 successful iteration (JSON Lines), matching the `--output` file's existing
 format — not the single "exactly one JSON object" single-shot promises.
-`--output`, when supplied, still appends via the same `FileCrawlResultSink`
-(ADR-024/ADR-027), once per successful iteration.
+`--output`, when supplied, still saves via the selected sink (ADR-024/
+ADR-027/ADR-031), once per successful iteration.
 
 #### Batch/multi-URL mode (ADR-029)
 
@@ -366,8 +381,28 @@ process-level success; each successful URL prints its own JSON line, and
 each skipped URL logs its own error, so the operator can tell full success
 from partial success without a new exit-code category. No new exit code
 is introduced; batch mode reuses exactly the codes above. `--output`, when
-supplied, appends via the same `FileCrawlResultSink`, once per successful
+supplied, saves via the selected sink (see below), once per successful
 URL.
+
+#### Sink selection (ADR-031)
+
+`--sink {file,sqlite}` — valid only together with `--output` — selects
+which concrete sink `--output` targets, resolved once regardless of
+whether the CLI is in single-shot, scheduled, batch, or scheduled-batch
+mode:
+
+- `file` (the default when `--sink` is omitted) appends one JSON Lines
+  record per successful result via `FileCrawlResultSink` — ADR-027's
+  original, unchanged behavior.
+- `sqlite` upserts by `requested_url` into a SQLite database via
+  `SqliteCrawlResultSink` (ADR-030) instead, giving real idempotency:
+  re-crawling the same URL under `--interval` or across repeated
+  `--urls-file` passes replaces that URL's row rather than duplicating
+  it.
+
+`--sink` without `--output` is rejected by argument parsing, since there
+is then no destination for it to target. Persisting to both sinks in one
+invocation is not supported.
 
 ### Persistence boundary
 
@@ -418,16 +453,17 @@ missing, empty, or not a string, or when the durable write fails (an
 invalid destination or database file, for example).
 
 Neither sink is imported by `ArticleCrawlService` or `ApplicationRuntime`;
-a static test verifies this. Per ADR-027, `aa_crawler.cli.app` is the one
-deliberate exception to `FileCrawlResultSink`'s optionality: when the
-CLI's `--output` argument is supplied, it constructs this same
-`FileCrawlResultSink` and calls `save()` after the JSON payload has
-already been printed to stdout. `aa_crawler.cli.app` imports
+a static test verifies this. Per ADR-027, the CLI is one deliberate
+exception to both sinks' optionality: when `--output` is supplied, it
+constructs `FileCrawlResultSink` by default, or `SqliteCrawlResultSink`
+when `--sink sqlite` is also given (ADR-031), and calls `save()` after the
+JSON payload has already been printed to stdout. `aa_crawler.cli.app`,
+`aa_crawler.cli.scheduler`, and `aa_crawler.cli.batch` each import
 `aa_crawler.persistence` only for this purpose; a static test asserts this
-positively, alongside the unchanged negative assertion for
-`ArticleCrawlService` and `ApplicationRuntime`. `SqliteCrawlResultSink` is
-not wired into the CLI at all yet (ADR-030 explicitly defers this); a
-caller composes it directly, as shown above.
+positively for `cli.app`, alongside the unchanged negative assertion for
+`ArticleCrawlService` and `ApplicationRuntime`. Composing either sink
+directly in Python, as shown above, remains fully supported and is not
+CLI-specific.
 
 ### Request identity
 
@@ -680,15 +716,16 @@ invocations.
 | **Sprint 13** | CLI scheduled crawl mode (`--interval`) | **Completed** |
 | **Sprint 14** | CLI batch/multi-URL input (`--urls-file`) | **Completed** |
 | **Sprint 15** | SQLite crawl result sink (`SqliteCrawlResultSink`) | **Completed** |
+| **Sprint 16** | CLI sink selection (`--sink {file,sqlite}`) | **Completed** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/
 credential review), non-HTML content acquisition, a credential/
 authentication mechanism, separately reviewed redirect architecture, broader
-reviewed sources, alternate execution families under ADR-019, CLI wiring
-for sink selection (ADR-030's deferred follow-up), concurrent per-URL
-crawling within one pass, a remote/dynamic URL-list source, distributed
-worker/queue concerns, and observability hardening.
+reviewed sources, alternate execution families under ADR-019, persisting
+to more than one sink in a single invocation, concurrent per-URL crawling
+within one pass, a remote/dynamic URL-list source, distributed worker/
+queue concerns, and observability hardening.
 
 ## Documentation
 
@@ -707,6 +744,7 @@ worker/queue concerns, and observability hardening.
 - [ADR-028: CLI Scheduled Crawl Mode](docs/adr/0028-cli-scheduled-crawl-mode.md)
 - [ADR-029: CLI Batch/Multi-URL Input](docs/adr/0029-cli-batch-url-input.md)
 - [ADR-030: SQLite Crawl Result Sink](docs/adr/0030-sqlite-crawl-result-sink.md)
+- [ADR-031: CLI Sink Selection](docs/adr/0031-cli-sink-selection.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 
