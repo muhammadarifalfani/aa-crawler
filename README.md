@@ -126,10 +126,21 @@ CI-pipeline precedent.
   resolved once in `main()` and reused across single-shot, scheduled,
   batch, and scheduled-batch mode; defaults to `file`, preserving every
   existing invocation's exact behavior when omitted
+- Bounded, robots-rechecked HTML redirect following (ADR-032): a 3xx
+  response with a `Location` header advances `HtmlFetcher` to the next
+  hop, up to 5 hops, with robots.txt re-checked at every hop; a 6th
+  redirect raises `TooManyRedirectsError`, and `HtmlDocument.final_url`
+  reflects the real landing page, letting `ArticleCrawlService`'s
+  existing source-boundary check apply to a genuine transport-produced
+  value for the first time
 
 ## Current limitations
 
-- Automatic redirect following is not enabled.
+- Redirect following (ADR-032) is bounded at 5 hops and re-validates
+  robots.txt at every hop, but only the terminal landing page's host is
+  checked against the requested URL's source profile — an intermediate
+  hop's host is not individually checked against the source registry,
+  an accepted trade-off documented in ADR-032.
 - `generic_json_article` is a synthetic proof-of-concept parser family
   exercised only through in-test fixtures; no production `SourceProfile`
   uses it, and it is not reachable through real network acquisition, since
@@ -742,7 +753,7 @@ invocations.
 | **Sprint 16** | CLI sink selection (`--sink {file,sqlite}`) | **Completed** |
 | **Sprint 17** | Third production source activation (Detik enabled) | **Completed** |
 | **Sprint 18** | CI security scanning (ruff `"S"`, `pip-audit`) | **Completed** |
-| **Sprint 19** | Redirect architecture | Planned |
+| **Sprint 19** | Redirect architecture (ADR-032) | **Completed** |
 | **Sprint 20** | Rate limiting / politeness delay | Planned |
 | **Sprint 21** | Health/liveness signaling | Planned |
 | **Sprint 22** | Authorized live crawl smoke test + scheduled CI vulnerability re-scanning | Planned |

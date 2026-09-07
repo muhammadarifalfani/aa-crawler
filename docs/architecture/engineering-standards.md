@@ -339,8 +339,11 @@ application wrapping.
 
 `ArticleCrawlService` forwards caller metadata to acquisition unchanged.
 Metadata does not control source selection, retry eligibility, identity,
-parser selection, or source governance. Automatic redirect following remains
-unimplemented.
+parser selection, or source governance. `HtmlFetcher` follows redirects
+internally, bounded at 5 hops with robots.txt re-checked at every hop
+(ADR-032); this source-boundary gate is what finally validates a real,
+transport-produced `final_url` against the requested URL's profile,
+rather than only a value fabricated in tests.
 
 The application error hierarchy is:
 
@@ -409,24 +412,28 @@ ADR-024 (application-level persistence boundary for crawl results), ADR-025
 (extensible parser-family composition seam), ADR-026 (Microdata article
 parser family), ADR-027 (CLI-triggered persistence), ADR-028 (CLI
 scheduled crawl mode), ADR-029 (CLI batch/multi-URL input), ADR-030
-(SQLite crawl result sink), and ADR-031 (CLI sink selection) are Accepted
-and implemented. ADR-016 (logging-redaction scope) and ADR-019 (future
-execution families) remain Proposed. ADR-018 (error-root taxonomy) remains
-Deferred. ADR-017 (metadata portability) also remains Deferred: ADR-024,
-ADR-025, ADR-026, and ADR-030 together narrowly answer its "persistence"
-and "multiple parser families"/"custom parser or adapter behavior" review
-triggers with an optional persistence port, two concrete sinks, and two
-closed, statically-dispatched additional parser families, but none
-resolves plugin, queue, or worker portability, so the status is
-unchanged; ADR-028, ADR-029, and ADR-031 similarly stay inside the
+(SQLite crawl result sink), ADR-031 (CLI sink selection), and ADR-032
+(bounded redirect following) are Accepted and implemented. ADR-016
+(logging-redaction scope) and ADR-019 (future execution families) remain
+Proposed. ADR-018 (error-root taxonomy) remains Deferred. ADR-017
+(metadata portability) also remains Deferred: ADR-024, ADR-025, ADR-026,
+and ADR-030 together narrowly answer its "persistence" and "multiple
+parser families"/"custom parser or adapter behavior" review triggers
+with an optional persistence port, two concrete sinks, and two closed,
+statically-dispatched additional parser families, but none resolves
+plugin, queue, or worker portability, so the status is unchanged;
+ADR-028, ADR-029, ADR-031, and ADR-032 similarly stay inside the
 existing synchronous architecture without meeting that trigger. Current
-totals are 24 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+totals are 25 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 Async execution, browser automation, dynamic plugins, distributed
 crawling, workers, queues, metrics, tracing, credentialed/authenticated
 outbound requests, non-HTML content acquisition, thread-safety
-guarantees, automatic redirects, and live profile reload remain
-unimplemented or conditional future work. In-process, single-machine
+guarantees, rate limiting or politeness delay between requests, and live
+profile reload remain unimplemented or conditional future work. Redirect
+following now exists, bounded and robots-rechecked (ADR-032); per-hop
+domain revalidation during a redirect chase does not (see ADR-032's own
+accepted residual risk). In-process, single-machine
 scheduling of a fixed URL or URL list now exists (ADR-028/ADR-029);
 distributed or cron-registry-style scheduling does not. The optional,
 caller-composed persistence primitive (see Persistence boundary below)
