@@ -404,19 +404,19 @@ ownership), ADR-023 (CLI application entry point and process boundary),
 ADR-024 (application-level persistence boundary for crawl results), ADR-025
 (extensible parser-family composition seam), ADR-026 (Microdata article
 parser family), ADR-027 (CLI-triggered persistence), ADR-028 (CLI
-scheduled crawl mode), ADR-029 (CLI batch/multi-URL input), and ADR-030
-(SQLite crawl result sink) are Accepted and implemented. ADR-016
-(logging-redaction scope) and ADR-019 (future execution families) remain
-Proposed. ADR-018 (error-root taxonomy) remains Deferred. ADR-017
-(metadata portability) also remains Deferred: ADR-024, ADR-025, ADR-026,
-and ADR-030 together narrowly answer its "persistence" and "multiple
-parser families"/"custom parser or adapter behavior" review triggers with
-an optional persistence port, two concrete sinks, and two closed,
-statically-dispatched additional parser families, but none resolves
-plugin, queue, or worker portability, so the status is unchanged; ADR-028
-and ADR-029 similarly stay inside the existing synchronous architecture
-without meeting that trigger. Current totals are 23 Accepted, 2 Proposed,
-2 Deferred, and 0 Superseded.
+scheduled crawl mode), ADR-029 (CLI batch/multi-URL input), ADR-030
+(SQLite crawl result sink), and ADR-031 (CLI sink selection) are Accepted
+and implemented. ADR-016 (logging-redaction scope) and ADR-019 (future
+execution families) remain Proposed. ADR-018 (error-root taxonomy) remains
+Deferred. ADR-017 (metadata portability) also remains Deferred: ADR-024,
+ADR-025, ADR-026, and ADR-030 together narrowly answer its "persistence"
+and "multiple parser families"/"custom parser or adapter behavior" review
+triggers with an optional persistence port, two concrete sinks, and two
+closed, statically-dispatched additional parser families, but none
+resolves plugin, queue, or worker portability, so the status is
+unchanged; ADR-028, ADR-029, and ADR-031 similarly stay inside the
+existing synchronous architecture without meeting that trigger. Current
+totals are 24 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 Async execution, browser automation, dynamic plugins, distributed
 crawling, workers, queues, metrics, tracing, credentialed/authenticated
@@ -427,10 +427,11 @@ scheduling of a fixed URL or URL list now exists (ADR-028/ADR-029);
 distributed or cron-registry-style scheduling does not. The optional,
 caller-composed persistence primitive (see Persistence boundary below)
 now has two concrete sinks — an append-only file sink and an idempotent
-SQLite sink (ADR-030) — and is reachable through the CLI's optional
-`--output` argument (ADR-027), though only the file sink is currently
-CLI-wired; the application service and runtime remain fully unaware of
-persistence either way. Two additional parser families
+SQLite sink (ADR-030) — both reachable through the CLI's optional
+`--output` argument (ADR-027), selectable via `--sink {file,sqlite}`
+(ADR-031, defaulting to the file sink); the application service and
+runtime remain fully unaware of persistence either way. Two additional
+parser families
 (`generic_json_article`, `microdata_article`) exist to prove multi-family
 composition (see Parser-family composition below); no production source
 uses either, and `adapter_key` remains reserved and unconditionally
@@ -594,7 +595,7 @@ to avoid refactoring already-tested single-URL code paths.
 ### Persistence boundary
 
 `aa_crawler.persistence` is an optional, application-level port implementing
-ADR-024, extended by ADR-030. It owns:
+ADR-024, extended by ADR-030 and CLI-exposed by ADR-031. It owns:
 
 - one abstract port, `BaseCrawlResultSink`, declaring
   `save(item: CrawlerItem) -> None`;
@@ -626,13 +627,22 @@ always includes it.
 `ast` module inspection) rather than by exercising runtime behavior, since
 the guarantee under test is the absence of any reference at all. Per
 ADR-027, `aa_crawler.cli.app` is the one deliberate, tested exception: it
-imports `aa_crawler.persistence` only to support `--output`, which still
-constructs only `FileCrawlResultSink` — `SqliteCrawlResultSink` has no CLI
-wiring at all (ADR-030 explicitly defers this). A separate static
-assertion positively confirms the `cli.app` import exists, so the
-narrowed boundary is tested both ways rather than left as a silent gap. A
-caller that already holds a produced `CrawlerItem` — whether the CLI or
-any other code — composes either sink explicitly, outside the application
+imports `aa_crawler.persistence` only to support `--output`. Per ADR-031,
+`--output` constructs `FileCrawlResultSink` by default or
+`SqliteCrawlResultSink` when `--sink sqlite` is also supplied — resolved
+once in `cli/__init__.py`'s `main()` via a `_SINK_FACTORIES` mapping and
+threaded through `run_crawl()`, `run_scheduled_crawl()`,
+`run_batch_crawl()`, and `run_scheduled_batch_crawl()` as an injectable
+`sink_factory: SinkFactory` parameter (a `Protocol` in `cli/app.py`
+describing the shared
+`__call__(self, *, destination: Path) -> BaseCrawlResultSink` shape both
+concrete sinks satisfy), defaulting to `FileCrawlResultSink` so every
+existing invocation's behavior is unchanged when `--sink` is omitted.
+A separate static assertion
+positively confirms the `cli.app` import exists, so the narrowed boundary
+is tested both ways rather than left as a silent gap. A caller that
+already holds a produced `CrawlerItem` — whether the CLI or any other
+code — may also compose either sink explicitly, outside the application
 runtime's ownership.
 
 ### Parser-family composition
@@ -1327,6 +1337,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 13 | CLI scheduled crawl mode completed: ADR-028 accepted, `--interval`/`--max-runs` added to `aa_crawler.cli.scheduler`, recoverable-vs-terminal per-iteration failure policy implemented and tested (100% coverage of the new module), real-pipeline integration verification complete, documentation aligned |
 | Sprint 14 | CLI batch/multi-URL input completed: ADR-029 accepted, `--urls-file` added to `aa_crawler.cli.batch`, per-URL failure policy implemented and tested (100% coverage of the new module) with `UnsupportedSourceError` deliberately recoverable (diverging from ADR-028), real-pipeline integration verification complete, documentation aligned |
 | Sprint 15 | SQLite crawl result sink completed: ADR-030 accepted, `SqliteCrawlResultSink` added to `aa_crawler.persistence` using only the standard-library `sqlite3` module, upserting by `requested_url` for real idempotency (100% coverage of the new module), `FileCrawlResultSink` unmodified, CLI wiring explicitly deferred, integration verification complete (including a real-process smoke test proving idempotent upsert), documentation aligned |
+| Sprint 16 | CLI sink selection completed: ADR-031 accepted, `--sink {file,sqlite}` added to `cli/__init__.py`, resolved once and threaded through all four crawl entry functions as an injectable `sink_factory` defaulting to `FileCrawlResultSink` (every existing invocation's behavior unchanged when `--sink` is omitted), real-pipeline integration verification complete (including a real `sqlite3` database produced through the CLI), documentation aligned |
 
 ### 15.3 ADR Triggers
 
