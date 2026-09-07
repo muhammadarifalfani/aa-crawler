@@ -19,6 +19,7 @@ from aa_crawler.parser import ArticleParserError, BaseParser, JsonLdArticleParse
 from aa_crawler.sources import (
     CNN_INDONESIA_PROFILE,
     DEFAULT_SOURCE_PROFILES,
+    DETIK_PROFILE,
     KOMPAS_PROFILE,
     SourceProfile,
     SourceRegistry,
@@ -342,7 +343,11 @@ def test_repeated_calls_are_deterministic_and_use_fresh_real_parsers() -> None:
     assert all(isinstance(parser, JsonLdArticleParser) for parser in composer.parsers)
     assert registry.profiles is profile_snapshot
     assert tuple(profile.to_dict() for profile in registry.profiles) == profile_values
-    assert DEFAULT_SOURCE_PROFILES == (CNN_INDONESIA_PROFILE, KOMPAS_PROFILE)
+    assert DEFAULT_SOURCE_PROFILES == (
+        CNN_INDONESIA_PROFILE,
+        KOMPAS_PROFILE,
+        DETIK_PROFILE,
+    )
 
 
 def test_fake_acquisition_has_no_network_or_robots_runtime() -> None:
