@@ -11,6 +11,7 @@ from aa_crawler.parser import JsonLdArticleParser
 from aa_crawler.sources import (
     CNN_INDONESIA_PROFILE,
     DEFAULT_SOURCE_PROFILES,
+    DETIK_PROFILE,
     KOMPAS_PROFILE,
     SourceProfile,
     SourceRegistry,
@@ -51,22 +52,42 @@ def test_kompas_profile_is_enabled_with_only_validated_exact_hosts() -> None:
     assert not profile.supports_host("kompas.com")
 
 
+def test_detik_profile_is_enabled_with_only_validated_exact_host() -> None:
+    """Detik was added in Sprint 17 (a project-owner governance decision),
+    with exactly one approved host — its other verticals (e.g.
+    finance.detik.com) were deliberately not included.
+    """
+    profile = DETIK_PROFILE
+
+    assert type(profile) is SourceProfile
+    assert profile.source == "detik"
+    assert profile.domains == ("news.detik.com",)
+    assert profile.parser_family == "jsonld_article"
+    assert profile.adapter_key is None
+    assert profile.enabled is True
+    assert profile.supports_host("news.detik.com")
+    assert not profile.supports_host("finance.detik.com")
+    assert not profile.supports_host("www.detik.com")
+
+
 def test_default_profiles_are_immutable_ordered_plain_values() -> None:
     assert isinstance(DEFAULT_SOURCE_PROFILES, tuple)
     assert DEFAULT_SOURCE_PROFILES == (
         CNN_INDONESIA_PROFILE,
         KOMPAS_PROFILE,
+        DETIK_PROFILE,
     )
     assert DEFAULT_SOURCE_PROFILES[0] is CNN_INDONESIA_PROFILE
     assert DEFAULT_SOURCE_PROFILES[1] is KOMPAS_PROFILE
-    assert len({profile.source for profile in DEFAULT_SOURCE_PROFILES}) == 2
+    assert DEFAULT_SOURCE_PROFILES[2] is DETIK_PROFILE
+    assert len({profile.source for profile in DEFAULT_SOURCE_PROFILES}) == 3
     assert all(type(profile) is SourceProfile for profile in DEFAULT_SOURCE_PROFILES)
     with pytest.raises(AttributeError):
         DEFAULT_SOURCE_PROFILES.append(CNN_INDONESIA_PROFILE)  # type: ignore[attr-defined]
 
 
 def test_default_profiles_construct_conflict_free_registry() -> None:
-    """Both current production profiles are enabled; each resolves through
+    """All current production profiles are enabled; each resolves through
     normal (non-`include_disabled`) lookup.
     """
     registry = SourceRegistry(DEFAULT_SOURCE_PROFILES)
@@ -84,6 +105,12 @@ def test_default_profiles_construct_conflict_free_registry() -> None:
     assert (
         registry.get_by_url("https://www.kompas.com/synthetic/article")
         is KOMPAS_PROFILE
+    )
+    assert DETIK_PROFILE in registry.profiles
+    assert registry.get_by_source("detik") is DETIK_PROFILE
+    assert registry.get_by_host("news.detik.com") is DETIK_PROFILE
+    assert (
+        registry.get_by_url("https://news.detik.com/synthetic/article") is DETIK_PROFILE
     )
 
 
@@ -126,6 +153,15 @@ def test_kompas_profile_now_composes_like_any_other_enabled_source() -> None:
     assert type(parser) is JsonLdArticleParser
     assert parser.source == "kompas"
     assert parser.source_domains == frozenset(KOMPAS_PROFILE.domains)
+
+
+def test_detik_profile_composes_like_any_other_enabled_source() -> None:
+    """Detik is enabled (Sprint 17); composition succeeds like CNN's."""
+    parser = ParserComposer().create(DETIK_PROFILE)
+
+    assert type(parser) is JsonLdArticleParser
+    assert parser.source == "detik"
+    assert parser.source_domains == frozenset(DETIK_PROFILE.domains)
 
 
 def test_disabled_profile_cannot_be_composed() -> None:
@@ -188,8 +224,10 @@ def test_profiles_module_exports_only_approved_constants() -> None:
     assert profiles.__all__ == [
         "CNN_INDONESIA_PROFILE",
         "DEFAULT_SOURCE_PROFILES",
+        "DETIK_PROFILE",
         "KOMPAS_PROFILE",
     ]
     assert not hasattr(profiles, "DEFAULT_SOURCE_REGISTRY")
     assert not hasattr(profiles, "CNNParser")
     assert not hasattr(profiles, "KompasParser")
+    assert not hasattr(profiles, "DetikParser")

@@ -16,6 +16,7 @@ from aa_crawler.robots import RobotsPolicy
 from aa_crawler.sources import (
     CNN_INDONESIA_PROFILE,
     DEFAULT_SOURCE_PROFILES,
+    DETIK_PROFILE,
     KOMPAS_PROFILE,
     SourceProfile,
     SourceRegistry,
@@ -123,7 +124,11 @@ def test_cnn_golden_path_resolves_composes_and_serializes() -> None:
     }
     assert item.data["source"] != "Untrusted Synthetic Publisher"
     assert DEFAULT_SOURCE_PROFILES is defaults_before
-    assert DEFAULT_SOURCE_PROFILES == (CNN_INDONESIA_PROFILE, KOMPAS_PROFILE)
+    assert DEFAULT_SOURCE_PROFILES == (
+        CNN_INDONESIA_PROFILE,
+        KOMPAS_PROFILE,
+        DETIK_PROFILE,
+    )
 
 
 def test_requested_query_and_canonical_identity_remain_distinct() -> None:
@@ -170,6 +175,21 @@ def test_kompas_resolves_and_composes_like_any_other_enabled_source() -> None:
     parser = ParserComposer().create(profile)
     assert isinstance(parser, JsonLdArticleParser)
     assert parser.source == "kompas"
+
+
+def test_detik_resolves_and_composes_like_any_other_enabled_source() -> None:
+    """Detik was added in Sprint 17 (a project-owner governance decision);
+    it resolves and composes through the same path as CNN Indonesia and
+    Kompas.
+    """
+    registry = SourceRegistry(DEFAULT_SOURCE_PROFILES)
+    url = "https://news.detik.com/synthetic/article"
+
+    profile = registry.get_by_url(url)
+    assert profile is DETIK_PROFILE
+    parser = ParserComposer().create(profile)
+    assert isinstance(parser, JsonLdArticleParser)
+    assert parser.source == "detik"
 
 
 def test_disabled_synthetic_profile_stays_blocked_through_composition() -> None:

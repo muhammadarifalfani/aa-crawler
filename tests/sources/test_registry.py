@@ -244,6 +244,7 @@ def test_public_api_is_explicit_and_minimal() -> None:
     assert sources.__all__ == [
         "CNN_INDONESIA_PROFILE",
         "DEFAULT_SOURCE_PROFILES",
+        "DETIK_PROFILE",
         "KOMPAS_PROFILE",
         "SourceProfile",
         "SourceRegistry",

@@ -57,6 +57,7 @@ def test_public_export_is_explicit() -> None:
     assert sources.__all__ == [
         "CNN_INDONESIA_PROFILE",
         "DEFAULT_SOURCE_PROFILES",
+        "DETIK_PROFILE",
         "KOMPAS_PROFILE",
         "SourceProfile",
         "SourceRegistry",
