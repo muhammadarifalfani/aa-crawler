@@ -13,5 +13,9 @@ class ResponseError(CrawlerError):
     """Raised when a crawler response cannot be processed safely."""
 
 
+class TooManyRedirectsError(ResponseError):
+    """Raised when a redirect chain exceeds the allowed hop count."""
+
+
 class ParsingError(CrawlerError):
     """Raised when response content cannot be parsed into crawler items."""

@@ -9,6 +9,7 @@ from aa_crawler.crawler import (
     CrawlerResponse,
     RequestError,
     ResponseError,
+    TooManyRedirectsError,
 )
 from aa_crawler.html import (
     HtmlContentTypeError,
@@ -40,6 +41,21 @@ def _response(
         status_code=status_code,
         headers=headers,
         body=body,
+        elapsed=0.1,
+    )
+
+
+def _redirect_response(
+    *,
+    status_code: int = 301,
+    location: str,
+    url: str = "https://example.test/hop",
+) -> CrawlerResponse:
+    return CrawlerResponse(
+        url=url,
+        status_code=status_code,
+        headers={"Location": location},
+        body=b"",
         elapsed=0.1,
     )
 
@@ -297,3 +313,113 @@ def test_repeated_fetches_reuse_dependencies() -> None:
     assert first.content == second.content
     assert len(client.requests) == 2
     assert robots.targets == ["https://example.test/one", "https://example.test/two"]
+
+
+# ADR-032: bounded, robots-rechecked redirect following.
+
+
+def test_redirect_with_location_header_advances_to_next_hop() -> None:
+    fetcher, client, robots = _fetcher(
+        responses=[
+            _redirect_response(location="https://example.test/final"),
+            _response(url="https://example.test/final"),
+        ],
+        decisions=[True, True],
+    )
+
+    document = fetcher.fetch(url="https://example.test/original")
+
+    assert document.requested_url == "https://example.test/original"
+    assert document.final_url == "https://example.test/final"
+    assert [request.url for request in client.requests] == [
+        "https://example.test/original",
+        "https://example.test/final",
+    ]
+    assert robots.targets == [
+        "https://example.test/original",
+        "https://example.test/final",
+    ]
+
+
+def test_relative_location_header_resolves_against_current_hop() -> None:
+    fetcher, client, _ = _fetcher(
+        responses=[
+            _redirect_response(location="moved"),
+            _response(),
+        ],
+        decisions=[True, True],
+    )
+
+    fetcher.fetch(url="https://example.test/section/original")
+
+    assert [request.url for request in client.requests] == [
+        "https://example.test/section/original",
+        "https://example.test/section/moved",
+    ]
+
+
+def test_redirect_without_location_header_raises_response_error() -> None:
+    fetcher, _, _ = _fetcher(responses=[_response(status_code=302)])
+
+    with pytest.raises(ResponseError, match="not successful"):
+        fetcher.fetch(url="https://example.test/page")
+
+
+@pytest.mark.parametrize("status_code", [404, 500])
+def test_non_redirect_failure_status_raises_response_error(status_code: int) -> None:
+    fetcher, _, _ = _fetcher(responses=[_response(status_code=status_code)])
+
+    with pytest.raises(ResponseError, match="not successful"):
+        fetcher.fetch(url="https://example.test/page")
+
+
+def test_exactly_five_redirects_then_success() -> None:
+    responses: list[CrawlerResponse | Exception] = [
+        _redirect_response(location=f"https://example.test/hop-{n}")
+        for n in range(1, 6)
+    ]
+    responses.append(_response(url="https://example.test/hop-5"))
+
+    fetcher, client, _ = _fetcher(responses=responses, decisions=[True] * 6)
+
+    document = fetcher.fetch(url="https://example.test/hop-0")
+
+    assert document.requested_url == "https://example.test/hop-0"
+    assert document.final_url == "https://example.test/hop-5"
+    assert len(client.requests) == 6
+
+
+def test_sixth_redirect_exceeds_cap() -> None:
+    responses = [
+        _redirect_response(location=f"https://example.test/hop-{n}")
+        for n in range(1, 7)
+    ]
+
+    fetcher, client, _ = _fetcher(responses=responses, decisions=[True] * 6)
+
+    with pytest.raises(TooManyRedirectsError, match="exceeded 5 hops"):
+        fetcher.fetch(url="https://example.test/hop-0")
+
+    assert len(client.requests) == 6
+
+
+def test_too_many_redirects_is_a_response_error() -> None:
+    assert issubclass(TooManyRedirectsError, ResponseError)
+
+
+def test_robots_disallow_on_redirect_target_stops_before_request() -> None:
+    fetcher, client, robots = _fetcher(
+        responses=[_redirect_response(location="https://example.test/blocked")],
+        decisions=[True, False],
+    )
+
+    with pytest.raises(HtmlDisallowedError, match="disallowed"):
+        fetcher.fetch(url="https://example.test/original")
+
+    assert robots.targets == [
+        "https://example.test/original",
+        "https://example.test/blocked",
+    ]
+    assert [request.url for request in client.requests] == [
+        "https://example.test/original",
+    ]

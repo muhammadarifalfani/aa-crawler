@@ -13,9 +13,12 @@ from aa_crawler.application import (
     UnsupportedSourceError,
 )
 from aa_crawler.composition import ParserComposer
-from aa_crawler.crawler import CrawlerItem
+from aa_crawler.crawler import CrawlerItem, CrawlerRequest, CrawlerResponse
 from aa_crawler.html import HtmlDocument, HtmlFetcher
+from aa_crawler.http import HttpClient
+from aa_crawler.identity import RequestIdentity
 from aa_crawler.parser import ArticleParserError, BaseParser, JsonLdArticleParser
+from aa_crawler.robots import RobotsPolicy
 from aa_crawler.sources import (
     CNN_INDONESIA_PROFILE,
     DEFAULT_SOURCE_PROFILES,
@@ -356,3 +359,116 @@ def test_fake_acquisition_has_no_network_or_robots_runtime() -> None:
     assert not hasattr(fetcher, "http_client")
     assert not hasattr(fetcher, "robots_policy")
     assert not hasattr(fetcher, "identity")
+
+
+# ADR-032: exercise a real HtmlFetcher (real redirect loop, real RobotsPolicy)
+# through ArticleCrawlService, instead of only a FakeHtmlFetcher fabricating
+# final_url directly, per ADR-032's own testing implications.
+
+
+class _FakeHttpClient(HttpClient):
+    """Return one pre-built response per call; never touches a real socket."""
+
+    def __init__(self, outcomes: list[CrawlerResponse]) -> None:
+        self._outcomes = iter(outcomes)
+        self.requests: list[CrawlerRequest] = []
+
+    def send(self, request: CrawlerRequest) -> CrawlerResponse:
+        self.requests.append(request)
+        return next(self._outcomes)
+
+
+def _robots_allow_all(url: str) -> CrawlerResponse:
+    return CrawlerResponse(
+        url=url,
+        status_code=200,
+        headers={},
+        body=b"User-agent: *\nAllow: /",
+        elapsed=0.1,
+    )
+
+
+def _redirect(*, url: str, location: str) -> CrawlerResponse:
+    return CrawlerResponse(
+        url=url,
+        status_code=301,
+        headers={"Location": location},
+        body=b"",
+        elapsed=0.1,
+    )
+
+
+def _page(*, url: str, canonical_url: str) -> CrawlerResponse:
+    return CrawlerResponse(
+        url=url,
+        status_code=200,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+        body=_synthetic_html(canonical_url).encode("utf-8"),
+        elapsed=0.1,
+    )
+
+
+def test_real_redirect_across_profiles_raises_source_boundary_error() -> None:
+    first = SourceProfile(source="first_news", domains=("first.example.test",))
+    second = SourceProfile(source="second_news", domains=("second.example.test",))
+    identity = RequestIdentity(product_version="1.0.0")
+    requested_url = "https://first.example.test/article"
+    final_url = "https://second.example.test/article"
+
+    http_client = _FakeHttpClient(
+        [
+            _robots_allow_all("https://first.example.test/robots.txt"),
+            _redirect(url=requested_url, location=final_url),
+            _robots_allow_all("https://second.example.test/robots.txt"),
+            _page(url=final_url, canonical_url=final_url),
+        ]
+    )
+    fetcher = HtmlFetcher(
+        http_client=http_client,
+        robots_policy=RobotsPolicy(http_client=http_client, identity=identity),
+        identity=identity,
+    )
+    composer = RecordingParserComposer()
+
+    with pytest.raises(SourceBoundaryError):
+        ArticleCrawlService(
+            source_registry=SourceRegistry((first, second)),
+            html_fetcher=fetcher,
+            parser_composer=cast("ParserComposer", composer),
+        ).crawl(requested_url)
+
+    assert composer.profiles == []
+
+
+def test_real_redirect_within_same_profile_succeeds() -> None:
+    profile = SourceProfile(
+        source="example_news",
+        domains=("news.example.test", "m.example.test"),
+    )
+    identity = RequestIdentity(product_version="1.0.0")
+    requested_url = "https://news.example.test/article?input=one"
+    final_url = "https://m.example.test/article"
+
+    http_client = _FakeHttpClient(
+        [
+            _robots_allow_all("https://news.example.test/robots.txt"),
+            _redirect(url=requested_url, location=final_url),
+            _robots_allow_all("https://m.example.test/robots.txt"),
+            _page(url=final_url, canonical_url=final_url),
+        ]
+    )
+    fetcher = HtmlFetcher(
+        http_client=http_client,
+        robots_policy=RobotsPolicy(http_client=http_client, identity=identity),
+        identity=identity,
+    )
+    composer = RecordingParserComposer()
+
+    result = ArticleCrawlService(
+        source_registry=SourceRegistry((profile,)),
+        html_fetcher=fetcher,
+        parser_composer=cast("ParserComposer", composer),
+    ).crawl(requested_url)
+
+    assert result[0].data["source_domain"] == "m.example.test"
+    assert composer.profiles == [profile]
