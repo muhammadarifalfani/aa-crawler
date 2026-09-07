@@ -11,7 +11,7 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5 through 12 are complete and closed. Sprint 10
+**Current status:** Sprints 5 through 13 are complete and closed. Sprint 10
 (CLI-triggered persistence) added ADR-027: the CLI gained one optional
 `--output` argument that reuses the existing `FileCrawlResultSink`, with
 integration verification confirming default CLI behavior (no `--output`) is
@@ -23,6 +23,11 @@ compose normally. Sprint 12 added a GitHub Actions CI pipeline
 (`.github/workflows/ci.yml`, no new ADR required) that runs the full
 quality-gate suite on every push and pull request targeting `main`,
 verified green on both a real pull request and a real push to `main`.
+Sprint 13 added ADR-028: an optional `--interval` CLI argument that
+repeats the same synchronous crawl on a schedule — the project's first
+step toward its realtime goal, staying fully synchronous and
+deliberately not triggering ADR-017 (queues/workers) or ADR-019 (async/
+browser runtimes).
 
 ## Current capabilities
 
@@ -40,7 +45,8 @@ verified green on both a real pull request and a real push to `main`.
 - Frozen, environment-first application settings and deterministic paths
 - Standard-library logging with correlation context and sensitive-data redaction
 - An operational synchronous CLI (`aa-crawler <url>`) around the existing
-  application runtime, with one JSON object on stdout and CLI-local exit codes
+  application runtime, with one JSON object on stdout (single-shot) or one
+  per line per iteration (scheduled mode, ADR-028), and CLI-local exit codes
 - Network-isolated CLI process-boundary integration verification exercising
   real bootstrap, runtime, source, and parser components
 - An optional, application-level persistence port (`BaseCrawlResultSink`)
@@ -57,6 +63,11 @@ verified green on both a real pull request and a real push to `main`.
 - A GitHub Actions CI pipeline (`.github/workflows/ci.yml`) that runs
   `uv lock --check`, the full pre-commit hook suite, and coverage-enforced
   tests on every push and pull request targeting `main`
+- An optional CLI `--interval SECONDS` / `--max-runs N` scheduled crawl
+  mode (ADR-028) that repeats the same synchronous crawl on one reused
+  `ApplicationRuntime`, with a documented recoverable-vs-terminal
+  per-iteration failure policy; single-shot mode is unchanged when
+  `--interval` is omitted
 
 ## Current limitations
 
@@ -72,21 +83,27 @@ verified green on both a real pull request and a real push to `main`.
 - Dynamic adapters and plugin runtimes are not implemented.
 - The production source set is intentionally small, and live crawling remains
   governance-controlled.
-- Persistence is an explicit, optional primitive: no worker, queue,
-  scheduler, distributed execution, asynchronous runtime, browser
-  rendering, or live profile reload exists. The CLI's `--output` flag
+- Persistence is an explicit, optional primitive: no distributed worker,
+  message queue, distributed execution, asynchronous runtime, browser
+  rendering, or live profile reload exists. The CLI's `--interval` flag
+  (ADR-028) provides only a single-process, in-memory, interval-based
+  repeat loop for one URL — not a general scheduler, cron-like registry,
+  or multi-URL/multi-process coordination. The CLI's `--output` flag
   (ADR-027) is the only wiring between the CLI and persistence; the
   application service and runtime remain fully unaware of persistence.
 - The shipped file sink is append-only with no deduplication, no idempotency
   guarantee, and no database or schema selection — including when triggered
   through the CLI's `--output` flag.
 - The synchronous runtime provides no thread-safety guarantee.
-- The CLI accepts exactly one URL per invocation: no batch input and no
-  file or stdin input. Stdout always carries exactly one JSON object; only
-  the optional `--output` file (not stdout) is JSON Lines.
+- The CLI accepts exactly one URL per invocation, in both single-shot and
+  scheduled mode: no batch input and no file or stdin input. Single-shot
+  mode's stdout is exactly one JSON object; scheduled mode's stdout is one
+  JSON object per line per successful iteration (JSON Lines), matching the
+  `--output` file's existing format.
 - The CLI has no flag that overrides source, robots, retry, identity, or
   parser behavior; it cannot bypass source governance. `--output` selects a
-  persistence destination only — it does not affect what is crawled.
+  persistence destination only, and `--interval`/`--max-runs` select only
+  how often the same crawl repeats — neither affects what is crawled.
 
 ## Architecture overview
 
@@ -175,13 +192,16 @@ process
   → stdout / process exit
 ```
 
-On success, it prints exactly one JSON object to stdout and exits `0`.
-Lifecycle and failure logging use the existing logger hierarchy and never
-reach stdout. Known failures translate to a small, CLI-local, deterministic
-exit-code mapping (see below); this mapping does not replace or extend the
-internal exception hierarchy, and no new runtime dependency was introduced —
-argument parsing, serialization, and correlation-ID generation use only the
-standard library (`argparse`, `json`, `uuid`).
+On success, it prints exactly one JSON object to stdout and exits `0`. With
+`--interval` (ADR-028), it instead enters scheduled crawl mode and prints
+one JSON object per line per successful iteration — see "Scheduled crawl
+mode" below. Lifecycle and failure logging use the existing logger
+hierarchy and never reach stdout. Known failures translate to a small,
+CLI-local, deterministic exit-code mapping (see below); this mapping does
+not replace or extend the internal exception hierarchy, and no new runtime
+dependency was introduced — argument parsing, serialization, and
+correlation-ID generation use only the standard library (`argparse`,
+`json`, `time`, `uuid`).
 
 #### CLI usage
 
@@ -192,12 +212,21 @@ aa-crawler https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/examp
 # behavior as above:
 aa-crawler https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/example-story \
   -o data/processed/results.jsonl
+
+# Re-crawl the same URL every 5 minutes, indefinitely, also persisting
+# each successful result (ADR-028):
+aa-crawler https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/example-story \
+  --interval 300 -o data/processed/results.jsonl
 ```
 
 The CLI takes exactly one positional URL per invocation, plus one optional
-`-o`/`--output PATH` argument. There are no subcommands and no flags that
-override source, robots, retry, identity, or parser behavior; `--output`
-selects a persistence destination only.
+`-o`/`--output PATH` argument, and an optional `-i`/`--interval SECONDS`
+argument (with an optional `--max-runs N` bound, valid only together with
+`--interval`) that selects scheduled crawl mode instead of the default
+single-shot mode. There are no subcommands and no flags that override
+source, robots, retry, identity, or parser behavior; `--output` selects a
+persistence destination only, and `--interval`/`--max-runs` select only how
+often the same crawl repeats.
 
 #### Output contract
 
@@ -232,6 +261,33 @@ These are CLI-local process-boundary semantics only. They do not introduce
 or replace a project-wide exception hierarchy or error taxonomy. Exit code
 `5` is reported only when `--output` is supplied; the JSON payload is
 already on stdout by the time it can occur.
+
+#### Scheduled crawl mode (ADR-028)
+
+`--interval SECONDS` (optionally bounded by `--max-runs N`) repeats the
+same synchronous crawl on one reused `ApplicationRuntime` instead of
+opening and closing one per invocation: the first crawl happens
+immediately, then the CLI waits `SECONDS` and crawls again, until
+interrupted, `--max-runs` iterations complete, or a terminal failure
+occurs. This stays fully synchronous — no async runtime, browser, queue,
+or worker was introduced (ADR-017 and ADR-019 remain exactly as Deferred/
+Proposed as before).
+
+Each iteration applies a documented recoverable-vs-terminal failure
+policy:
+
+| Condition | Behavior |
+|---|---|
+| A crawl-domain failure (exit code `3`'s underlying cause) | Recoverable: logged, no output for that iteration, the loop continues after the usual wait |
+| Reaching `--max-runs`, or a keyboard interrupt (`Ctrl+C`) | Clean shutdown: exit `0` |
+| An unsupported source, an unexpected failure, or a persistence write failure | Terminal: logged, the loop stops immediately with the same exit code single-shot mode would use |
+
+Because a scheduled run can produce more than one result, stdout's
+contract differs from single-shot mode: one JSON object **per line** per
+successful iteration (JSON Lines), matching the `--output` file's existing
+format — not the single "exactly one JSON object" single-shot promises.
+`--output`, when supplied, still appends via the same `FileCrawlResultSink`
+(ADR-024/ADR-027), once per successful iteration.
 
 ### Persistence boundary
 
@@ -514,14 +570,15 @@ invocations.
 | **Sprint 10** | CLI-triggered persistence | **Completed** |
 | **Sprint 11** | Second production source activation (Kompas enabled) | **Completed** |
 | **Sprint 12** | GitHub Actions CI pipeline | **Completed** |
+| **Sprint 13** | CLI scheduled crawl mode (`--interval`) | **Completed** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/
 credential review), non-HTML content acquisition, a credential/
 authentication mechanism, separately reviewed redirect architecture, broader
 reviewed sources, alternate execution families under ADR-019, a second
-concrete persistence sink, worker/queue/scheduler concerns, and
-observability hardening.
+concrete persistence sink, multi-URL/batch scheduled crawling, distributed
+worker/queue concerns, and observability hardening.
 
 ## Documentation
 
@@ -537,6 +594,7 @@ observability hardening.
 - [ADR-025: Extensible Parser-Family Composition Seam](docs/adr/0025-extensible-parser-family-composition.md)
 - [ADR-026: Microdata Article Parser Family](docs/adr/0026-microdata-article-parser-family.md)
 - [ADR-027: CLI-Triggered Persistence](docs/adr/0027-cli-triggered-persistence.md)
+- [ADR-028: CLI Scheduled Crawl Mode](docs/adr/0028-cli-scheduled-crawl-mode.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 

@@ -125,7 +125,8 @@ src/aa_crawler/
 │   └── runtime.py     # Runtime graph and resource ownership
 ├── cli/               # Synchronous process boundary around the application runtime
 │   ├── __init__.py    # Argument parsing and public main()
-│   └── app.py         # Bootstrap → runtime → crawl → exit-code mapping
+│   ├── app.py         # Bootstrap → runtime → crawl → exit-code mapping (single-shot)
+│   └── scheduler.py   # Bootstrap → reused runtime → repeated crawl (scheduled, ADR-028)
 ├── configuration/     # Settings, loading, and runtime paths
 ├── observability/     # Logging, context, and redaction
 ├── identity/          # Validated immutable request identity
@@ -136,7 +137,8 @@ src/aa_crawler/
 ├── contracts/         # Normalized application domain contracts
 ├── parser/            # Lazy parsing and generic article extraction
 ├── sources/           # Declarative source profiles and exact-host lookup
-└── composition/       # Explicit source-to-parser construction
+├── composition/       # Explicit source-to-parser construction
+└── persistence/       # Optional, application-level crawl-result persistence port
 ```
 
 New modules must not be created until their sprint task authorizes them.
@@ -433,7 +435,9 @@ ADR-023 around the existing application and runtime layers. It owns:
   runtime dependency);
 - invoking `bootstrap_application()` and `create_application_runtime()` in
   sequence;
-- serializing the single successful `ArticleCrawlService.crawl()` result;
+- serializing each successful `ArticleCrawlService.crawl()` result — one
+  per process in single-shot mode, one per iteration in scheduled mode
+  (ADR-028);
 - stdout/log channel separation; and
 - a small, CLI-local exit-code translation.
 
@@ -516,6 +520,36 @@ printed to stdout. A subsequent `PersistenceWriteError` maps to exit code
 `5` without un-printing that payload. No new sink type, sink-selection
 mechanism, or dependency is introduced; the CLI still selects nothing
 about source, robots, retry, identity, or parser behavior.
+
+#### Scheduled crawl mode
+
+`aa_crawler.cli.scheduler.run_scheduled_crawl()` implements ADR-028: an
+optional `-i`/`--interval SECONDS` argument (with an optional
+`--max-runs N` bound, valid only together with `--interval`) that repeats
+the same crawl on one `ApplicationRuntime` opened once for the whole run,
+instead of `run_crawl()`'s one-runtime-per-invocation single-shot mode.
+The interval wait is injected as a callable
+(`sleep: Callable[[float], None] = time.sleep`), never hardcoded, so tests
+substitute a deterministic double instead of a real wall-clock wait.
+
+Per-iteration outcomes follow a documented recoverable-vs-terminal policy:
+
+- `CrawlerError` is recoverable — logged, no output that iteration, the
+  loop continues after the usual wait.
+- `UnsupportedSourceError`, an unexpected `Exception`, and a post-crawl
+  `PersistenceWriteError` are terminal — logged, the loop stops
+  immediately, returning the same CLI-local exit code single-shot mode
+  already defines for that condition. No new exit code is introduced.
+- A keyboard interrupt and reaching `--max-runs` are both a clean shutdown
+  (`EXIT_SUCCESS`), not a failure; the runtime's context-manager `__exit__`
+  still runs, so cleanup is identical to single-shot mode's.
+
+This stays entirely inside the existing synchronous architecture: no
+async runtime, browser automation, message queue, or worker was
+introduced. ADR-017 (metadata portability) and ADR-019 (future execution
+families) remain exactly as Deferred/Proposed as before this sprint — a
+scheduler that repeats an existing synchronous crawl does not meet
+either's own named review trigger.
 
 ### Persistence boundary
 
@@ -1235,6 +1269,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 10 | CLI-triggered persistence completed: ADR-027 accepted, CLI gained an optional --output argument reusing FileCrawlResultSink, integration verification complete, documentation aligned |
 | Sprint 11 | Second production source activation completed: Kompas enabled as a project-governance decision under ADR-020's ordinary-onboarding pre-authorization (no new ADR), disabled-source test coverage decoupled onto a synthetic profile, integration verification complete, documentation aligned |
 | Sprint 12 | CI pipeline completed: `.github/workflows/ci.yml` added (no new ADR — automates already-approved practice, meets no ADR trigger), verified green on both a pull request and a push to `main`, integration verification complete, documentation aligned |
+| Sprint 13 | CLI scheduled crawl mode completed: ADR-028 accepted, `--interval`/`--max-runs` added to `aa_crawler.cli.scheduler`, recoverable-vs-terminal per-iteration failure policy implemented and tested (100% coverage of the new module), real-pipeline integration verification complete, documentation aligned |
 
 ### 15.3 ADR Triggers
 
