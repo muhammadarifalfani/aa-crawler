@@ -7,6 +7,7 @@ from aa_crawler.crawler.errors import (
     ParsingError,
     RequestError,
     ResponseError,
+    TooManyRedirectsError,
 )
 from aa_crawler.crawler.html import HtmlCrawler
 
@@ -20,4 +21,5 @@ __all__ = [
     "ParsingError",
     "RequestError",
     "ResponseError",
+    "TooManyRedirectsError",
 ]
