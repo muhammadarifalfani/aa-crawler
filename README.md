@@ -11,7 +11,7 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5 through 11 are complete and closed. Sprint 10
+**Current status:** Sprints 5 through 12 are complete and closed. Sprint 10
 (CLI-triggered persistence) added ADR-027: the CLI gained one optional
 `--output` argument that reuses the existing `FileCrawlResultSink`, with
 integration verification confirming default CLI behavior (no `--output`) is
@@ -19,7 +19,10 @@ unchanged while the new path works end-to-end through the real pipeline.
 Sprint 11 activated Kompas as a second real production source — a project-
 governance decision (no new ADR required; ADR-020 pre-authorizes ordinary
 source onboarding) — and both current production sources now resolve and
-compose normally.
+compose normally. Sprint 12 added a GitHub Actions CI pipeline
+(`.github/workflows/ci.yml`, no new ADR required) that runs the full
+quality-gate suite on every push and pull request targeting `main`,
+verified green on both a real pull request and a real push to `main`.
 
 ## Current capabilities
 
@@ -49,6 +52,11 @@ compose normally.
 - An optional CLI `--output PATH` flag (ADR-027) that appends the crawl
   result to a file via `FileCrawlResultSink`, off by default; default CLI
   behavior is unchanged when it is omitted
+- Two enabled production sources (CNN Indonesia, Kompas) resolving and
+  composing identically through the declarative source architecture
+- A GitHub Actions CI pipeline (`.github/workflows/ci.yml`) that runs
+  `uv lock --check`, the full pre-commit hook suite, and coverage-enforced
+  tests on every push and pull request targeting `main`
 
 ## Current limitations
 
@@ -505,6 +513,7 @@ invocations.
 | **Sprint 9** | Microdata article parser family | **Completed** |
 | **Sprint 10** | CLI-triggered persistence | **Completed** |
 | **Sprint 11** | Second production source activation (Kompas enabled) | **Completed** |
+| **Sprint 12** | GitHub Actions CI pipeline | **Completed** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/

@@ -50,7 +50,9 @@ APIs share one foundation.
 
 - Platform-specific crawler implementation.
 - Database or search engine selection and setup (Sprint 2+).
-- CI/CD pipeline configuration (deferred to a later sprint).
+- CI pipeline configuration was completed in Sprint 12
+  (`.github/workflows/ci.yml`); CD (continuous deployment) remains out of
+  scope.
 - Production deployment and infrastructure.
 - Implementation of platform crawlers, scheduling, persistence, and other
   future product components.
@@ -1073,7 +1075,9 @@ acquisition of a real source.
 
 The enforced minimum comes from `pyproject.toml`; higher phase targets guide
 engineering improvement without misrepresenting the active quality gate.
-Coverage is measured with `pytest-cov` and reported in CI when configured.
+Coverage is measured with `pytest-cov` and enforced in CI
+(`.github/workflows/ci.yml`, added in Sprint 12) on every push and pull
+request targeting `main`.
 
 ### 11.5 Testing Rules
 
@@ -1151,7 +1155,10 @@ uv run mypy src/                 # Type check
 ### 12.5 Enforcement
 
 - Pre-commit hooks are **mandatory** for all contributors.
-- CI (when configured) will run the same checks — a PR cannot merge with lint or type errors.
+- CI (`.github/workflows/ci.yml`, Sprint 12) runs the same checks on every
+  push and pull request targeting `main`; a merge does not itself require
+  the check to pass unless branch protection is separately configured on
+  GitHub, which is outside this repository's own files.
 - Formatting debates are resolved by tooling, not review comments.
 
 ---
@@ -1227,6 +1234,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 9 | Microdata article parser family completed: ADR-026 accepted, SourceProfile/ParserComposer support a third closed parser family, integration verification complete, documentation aligned |
 | Sprint 10 | CLI-triggered persistence completed: ADR-027 accepted, CLI gained an optional --output argument reusing FileCrawlResultSink, integration verification complete, documentation aligned |
 | Sprint 11 | Second production source activation completed: Kompas enabled as a project-governance decision under ADR-020's ordinary-onboarding pre-authorization (no new ADR), disabled-source test coverage decoupled onto a synthetic profile, integration verification complete, documentation aligned |
+| Sprint 12 | CI pipeline completed: `.github/workflows/ci.yml` added (no new ADR — automates already-approved practice, meets no ADR trigger), verified green on both a pull request and a push to `main`, integration verification complete, documentation aligned |
 
 ### 15.3 ADR Triggers
 
