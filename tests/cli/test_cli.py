@@ -298,6 +298,171 @@ def test_non_positive_max_runs_is_rejected_by_argument_parsing(
     assert excinfo.value.code == 2
 
 
+# --- Batch/multi-URL input dispatch (ADR-029) --------------------------------
+
+
+def test_supplying_neither_url_nor_urls_file_is_rejected() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main([])
+
+    assert excinfo.value.code == 2
+
+
+def test_supplying_both_url_and_urls_file_is_rejected(tmp_path: Path) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(f"{_CNN_URL}\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        main([_CNN_URL, "--urls-file", str(urls_file)])
+
+    assert excinfo.value.code == 2
+
+
+def test_urls_file_argument_dispatches_to_batch_crawl_not_single_shot(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(
+        f"{_CNN_URL}\nhttps://www.cnnindonesia.com/b\n", encoding="utf-8"
+    )
+    received: dict[str, object] = {}
+
+    def fake_run_batch_crawl(urls: list[str], *, output: Path | None = None) -> int:
+        received["urls"] = list(urls)
+        received["output"] = output
+        return EXIT_SUCCESS
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("this mode must not run")
+
+    monkeypatch.setattr(cli_module, "run_batch_crawl", fake_run_batch_crawl)
+    monkeypatch.setattr(cli_module, "run_scheduled_batch_crawl", fail_if_called)
+    monkeypatch.setattr(cli_module, "run_crawl", fail_if_called)
+    monkeypatch.setattr(cli_module, "run_scheduled_crawl", fail_if_called)
+
+    exit_code = main(["--urls-file", str(urls_file)])
+
+    assert exit_code == EXIT_SUCCESS
+    assert received == {
+        "urls": [_CNN_URL, "https://www.cnnindonesia.com/b"],
+        "output": None,
+    }
+
+
+def test_urls_file_with_interval_dispatches_to_scheduled_batch_crawl(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(f"{_CNN_URL}\n", encoding="utf-8")
+    received: dict[str, object] = {}
+
+    def fake_run_scheduled_batch_crawl(
+        urls: list[str],
+        *,
+        interval: float,
+        output: Path | None = None,
+        max_runs: int | None = None,
+    ) -> int:
+        received["urls"] = list(urls)
+        received["interval"] = interval
+        received["output"] = output
+        received["max_runs"] = max_runs
+        return EXIT_SUCCESS
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("this mode must not run")
+
+    monkeypatch.setattr(
+        cli_module, "run_scheduled_batch_crawl", fake_run_scheduled_batch_crawl
+    )
+    monkeypatch.setattr(cli_module, "run_batch_crawl", fail_if_called)
+    monkeypatch.setattr(cli_module, "run_crawl", fail_if_called)
+    monkeypatch.setattr(cli_module, "run_scheduled_crawl", fail_if_called)
+
+    exit_code = main(
+        ["--urls-file", str(urls_file), "--interval", "60", "--max-runs", "3"]
+    )
+
+    assert exit_code == EXIT_SUCCESS
+    assert received == {
+        "urls": [_CNN_URL],
+        "interval": 60.0,
+        "output": None,
+        "max_runs": 3,
+    }
+
+
+def test_urls_file_parses_urls_skipping_blank_lines_and_comments(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(
+        "\n".join(
+            [
+                "# a comment line",
+                "",
+                _CNN_URL,
+                "   ",
+                "# another comment",
+                "https://www.cnnindonesia.com/b",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    received: dict[str, object] = {}
+
+    def fake_run_batch_crawl(urls: list[str], *, output: Path | None = None) -> int:
+        del output
+        received["urls"] = list(urls)
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_batch_crawl", fake_run_batch_crawl)
+
+    exit_code = main(["--urls-file", str(urls_file)])
+
+    assert exit_code == EXIT_SUCCESS
+    assert received["urls"] == [_CNN_URL, "https://www.cnnindonesia.com/b"]
+
+
+def test_urls_file_that_does_not_exist_is_rejected_with_clear_error(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "does-not-exist.txt"
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--urls-file", str(missing)])
+
+    assert excinfo.value.code == 2
+
+
+def test_urls_file_containing_no_urls_is_rejected_with_clear_error(
+    tmp_path: Path,
+) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text("# only comments\n\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--urls-file", str(urls_file)])
+
+    assert excinfo.value.code == 2
+
+
+def test_max_runs_with_urls_file_but_without_interval_is_rejected(
+    tmp_path: Path,
+) -> None:
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(f"{_CNN_URL}\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--urls-file", str(urls_file), "--max-runs", "3"])
+
+    assert excinfo.value.code == 2
+
+
 # --- Successful execution ----------------------------------------------------
 
 

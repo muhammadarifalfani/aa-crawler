@@ -775,3 +775,67 @@ def test_cli_process_boundary_scheduled_mode_output_persists_the_real_result(
     lines = destination.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0]) == stdout_payload
+
+
+# --- 18. CLI batch/multi-URL input (ADR-029) ---------------------------------
+
+
+def test_cli_process_boundary_batch_mode_crawls_every_url_and_exits_success(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """Drive the real pipeline through --urls-file batch mode.
+
+    Both URLs share the fake acquisition leaf's one synthetic document, so
+    this proves the real wiring (registry, runtime, parser composition) is
+    reached once per URL — the same real components single-shot mode
+    reaches — not that each URL produces distinct content.
+    """
+    fetcher, clients = _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    second_url = (
+        "https://www.cnnindonesia.com/nasional/20990101010101-20-9999998/"
+        "invented-second-batch-story"
+    )
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(f"{_CNN_URL}\n{second_url}\n", encoding="utf-8")
+
+    exit_code = main(["--urls-file", str(urls_file)])
+
+    captured = capsys.readouterr()
+    lines = captured.out.strip().splitlines()
+    assert exit_code == 0
+    assert len(lines) == 2
+    assert all(json.loads(line)["source"] == "cnn_indonesia" for line in lines)
+    assert [call[0] for call in fetcher.calls] == [_CNN_URL, second_url]
+    assert clients[0].close_count == 1
+
+
+def test_cli_process_boundary_scheduled_batch_mode_produces_json_and_success_exit(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """Drive the real pipeline through scheduled --urls-file batch mode.
+
+    ``--max-runs 1`` bounds this to exactly one pass so the loop returns
+    before ever calling ``sleep``, keeping this test fully deterministic
+    and free of any real wall-clock wait — mirroring the single-URL
+    scheduled-mode integration test's precedent.
+    """
+    fetcher, clients = _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    urls_file = tmp_path / "urls.txt"
+    urls_file.write_text(f"{_CNN_URL}\n", encoding="utf-8")
+
+    exit_code = main(
+        ["--urls-file", str(urls_file), "--interval", "300", "--max-runs", "1"]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out.strip())
+    assert exit_code == 0
+    assert payload["source"] == "cnn_indonesia"
+    assert fetcher.calls == [(_CNN_URL, None)]
+    assert clients[0].close_count == 1
