@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gates:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Verify lockfile is up to date
+        run: uv lock --check
+
+      - name: Install project and development dependencies
+        run: uv sync --locked
+
+      - name: Run repository hook suite (ruff check, ruff format check, mypy, pytest)
+        run: uv run pre-commit run --all-files
+
+      - name: Run tests with coverage
+        run: uv run pytest --cov=aa_crawler --cov-report=term-missing
