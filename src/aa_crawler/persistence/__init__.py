@@ -8,10 +8,12 @@ produced ``CrawlerItem`` composes a concrete sink explicitly.
 from aa_crawler.persistence.base import BaseCrawlResultSink
 from aa_crawler.persistence.errors import PersistenceError, PersistenceWriteError
 from aa_crawler.persistence.file_sink import FileCrawlResultSink
+from aa_crawler.persistence.sqlite_sink import SqliteCrawlResultSink
 
 __all__ = [
     "BaseCrawlResultSink",
     "FileCrawlResultSink",
     "PersistenceError",
     "PersistenceWriteError",
+    "SqliteCrawlResultSink",
 ]
