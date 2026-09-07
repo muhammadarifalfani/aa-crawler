@@ -11,7 +11,7 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5 through 14 are complete and closed. Sprint 10
+**Current status:** Sprints 5 through 15 are complete and closed. Sprint 10
 (CLI-triggered persistence) added ADR-027: the CLI gained one optional
 `--output` argument that reuses the existing `FileCrawlResultSink`, with
 integration verification confirming default CLI behavior (no `--output`) is
@@ -33,7 +33,13 @@ CLI argument that crawls a list of URLs, once or on the same
 batch input... is proposed" review trigger — with a per-URL failure
 policy that deliberately treats an unsupported source as recoverable
 (skip that URL, keep going) rather than terminal, unlike ADR-028's
-single-URL scheduled mode.
+single-URL scheduled mode. Sprint 15 added ADR-030: a second concrete
+persistence sink, `SqliteCrawlResultSink`, using only the standard-library
+`sqlite3` module (no new runtime dependency) — it upserts by
+`requested_url` instead of appending, giving real idempotency for the
+repeated re-crawls scheduled and batch mode make common. It is not wired
+into the CLI yet (explicitly deferred, mirroring the ADR-024-then-ADR-027
+precedent); `FileCrawlResultSink` is completely unmodified.
 
 ## Current capabilities
 
@@ -57,8 +63,11 @@ single-URL scheduled mode.
 - Network-isolated CLI process-boundary integration verification exercising
   real bootstrap, runtime, source, and parser components
 - An optional, application-level persistence port (`BaseCrawlResultSink`)
-  with one minimal append-only file sink (`FileCrawlResultSink`); never
-  constructed by `ArticleCrawlService` or `ApplicationRuntime`
+  with two concrete sinks — an append-only file sink
+  (`FileCrawlResultSink`) and a SQLite sink with idempotent, per-
+  `requested_url` upserts (`SqliteCrawlResultSink`, ADR-030); neither is
+  constructed by `ArticleCrawlService` or `ApplicationRuntime`, and only
+  the file sink is currently wired into the CLI
 - Three closed, statically-dispatched parser families (`jsonld_article`,
   `generic_json_article`, and `microdata_article`), with `adapter_key`
   remaining reserved and unconditionally rejected
@@ -81,6 +90,11 @@ single-URL scheduled mode.
   `--output`/`--interval`/`--max-runs` flags; an unsupported source for
   one URL is recoverable within a batch (skip and continue) rather than
   terminal
+- A second concrete persistence sink, `SqliteCrawlResultSink` (ADR-030),
+  using only the standard-library `sqlite3` module — `save()` upserts by
+  `requested_url` into one table, replacing the previous row for that URL
+  instead of duplicating it; not wired into the CLI in this sprint, a
+  caller composes it directly
 
 ## Current limitations
 
@@ -106,9 +120,15 @@ single-URL scheduled mode.
   coordination. The CLI's `--output` flag (ADR-027) is the only wiring
   between the CLI and persistence; the application service and runtime
   remain fully unaware of persistence.
-- The shipped file sink is append-only with no deduplication, no idempotency
-  guarantee, and no database or schema selection — including when triggered
-  through the CLI's `--output` flag.
+- `FileCrawlResultSink` (the only sink the CLI's `--output` flag can
+  currently trigger) remains append-only with no deduplication or
+  idempotency guarantee. `SqliteCrawlResultSink` (ADR-030) does provide
+  per-`requested_url` idempotency, but is not yet CLI-selectable — a
+  caller must compose it directly in Python; there is still no CLI flag
+  to choose between the two sinks.
+- `SqliteCrawlResultSink`'s upsert-by-`requested_url` keeps only the
+  latest successful crawl per URL; it does not keep history across
+  crawls, and is not safe for concurrent writers from separate processes.
 - The synchronous runtime provides no thread-safety guarantee.
 - The CLI accepts either one URL (the positional `url`) or a batch of URLs
   from a local file (`--urls-file`, ADR-029) — never both, and never
@@ -351,16 +371,14 @@ URL.
 
 ### Persistence boundary
 
-`aa_crawler.persistence` is an optional, application-level port implementing
-ADR-024. It defines an abstract `BaseCrawlResultSink` (`save(item: CrawlerItem)
--> None`) and one concrete implementation, `FileCrawlResultSink`, which
-serializes `CrawlerItem.data` to JSON and appends it as one line to a
-caller-supplied file path — reusing the exact `dict(item.data)` →
-`json.dumps(...)` pattern already used by `aa_crawler.cli`.
+`aa_crawler.persistence` is an optional, application-level port
+implementing ADR-024. It defines an abstract `BaseCrawlResultSink`
+(`save(item: CrawlerItem) -> None`) and two concrete implementations.
 
-This package is never imported by `ArticleCrawlService` or
-`ApplicationRuntime`; a static test verifies this. A caller that already
-holds a produced `CrawlerItem` composes a sink explicitly:
+`FileCrawlResultSink` serializes `CrawlerItem.data` to JSON and appends it
+as one line to a caller-supplied file path — reusing the exact
+`dict(item.data)` → `json.dumps(...)` pattern already used by
+`aa_crawler.cli`:
 
 ```python
 from pathlib import Path
@@ -377,13 +395,39 @@ serialization or the durable write fails. The sink does not deduplicate,
 overwrite, or guarantee idempotency; repeated `save()` calls with the same
 item append the same line again.
 
-Per ADR-027, `aa_crawler.cli.app` is the one deliberate exception to this
-package's optionality: when the CLI's `--output` argument is supplied, it
-constructs this same `FileCrawlResultSink` and calls `save()` after the
-JSON payload has already been printed to stdout. `aa_crawler.cli.app`
-imports `aa_crawler.persistence` only for this purpose; a static test now
-asserts this positively, alongside the unchanged negative assertion for
-`ArticleCrawlService` and `ApplicationRuntime`.
+`SqliteCrawlResultSink` (ADR-030) instead upserts by
+`item.data["requested_url"]` into one SQLite table, using only the
+standard-library `sqlite3` module — no new runtime dependency:
+
+```python
+from pathlib import Path
+
+from aa_crawler.persistence import SqliteCrawlResultSink
+
+sink = SqliteCrawlResultSink(destination=Path("data/processed/results.db"))
+for item in items:
+    sink.save(item)
+```
+
+Unlike the file sink, repeated `save()` calls for the same `requested_url`
+replace that row's `payload` and `updated_at` timestamp instead of
+duplicating it — real idempotency for the repeated re-crawls scheduled
+(ADR-028) and batch (ADR-029) mode make common. `save()` raises
+`PersistenceWriteError` when serialization fails, when `requested_url` is
+missing, empty, or not a string, or when the durable write fails (an
+invalid destination or database file, for example).
+
+Neither sink is imported by `ArticleCrawlService` or `ApplicationRuntime`;
+a static test verifies this. Per ADR-027, `aa_crawler.cli.app` is the one
+deliberate exception to `FileCrawlResultSink`'s optionality: when the
+CLI's `--output` argument is supplied, it constructs this same
+`FileCrawlResultSink` and calls `save()` after the JSON payload has
+already been printed to stdout. `aa_crawler.cli.app` imports
+`aa_crawler.persistence` only for this purpose; a static test asserts this
+positively, alongside the unchanged negative assertion for
+`ArticleCrawlService` and `ApplicationRuntime`. `SqliteCrawlResultSink` is
+not wired into the CLI at all yet (ADR-030 explicitly defers this); a
+caller composes it directly, as shown above.
 
 ### Request identity
 
@@ -496,11 +540,14 @@ aa_crawler/
 │   │   └── runtime.py              # Runtime graph and resource ownership
 │   ├── cli/
 │   │   ├── __init__.py             # Argument parsing and public main()
-│   │   └── app.py                  # Bootstrap → runtime → crawl → exit-code mapping
+│   │   ├── app.py                  # Bootstrap → runtime → crawl → exit-code mapping (single-shot)
+│   │   ├── scheduler.py            # Bootstrap → reused runtime → repeated crawl (scheduled, ADR-028)
+│   │   └── batch.py                # Bootstrap → reused runtime → per-URL pass (batch, ADR-029)
 │   ├── persistence/
 │   │   ├── base.py                 # Abstract BaseCrawlResultSink port
 │   │   ├── errors.py               # PersistenceError, PersistenceWriteError
-│   │   └── file_sink.py            # FileCrawlResultSink (append-only JSON Lines)
+│   │   ├── file_sink.py            # FileCrawlResultSink (append-only JSON Lines)
+│   │   └── sqlite_sink.py          # SqliteCrawlResultSink (idempotent upsert, ADR-030)
 │   └── bootstrap.py                # Configuration, paths, and logging startup
 ├── tests/                          # Mirrored automated test suite
 ├── pyproject.toml                  # Project metadata and dependencies
@@ -632,15 +679,16 @@ invocations.
 | **Sprint 12** | GitHub Actions CI pipeline | **Completed** |
 | **Sprint 13** | CLI scheduled crawl mode (`--interval`) | **Completed** |
 | **Sprint 14** | CLI batch/multi-URL input (`--urls-file`) | **Completed** |
+| **Sprint 15** | SQLite crawl result sink (`SqliteCrawlResultSink`) | **Completed** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/
 credential review), non-HTML content acquisition, a credential/
 authentication mechanism, separately reviewed redirect architecture, broader
-reviewed sources, alternate execution families under ADR-019, a second
-concrete persistence sink, concurrent per-URL crawling within one pass, a
-remote/dynamic URL-list source, distributed worker/queue concerns, and
-observability hardening.
+reviewed sources, alternate execution families under ADR-019, CLI wiring
+for sink selection (ADR-030's deferred follow-up), concurrent per-URL
+crawling within one pass, a remote/dynamic URL-list source, distributed
+worker/queue concerns, and observability hardening.
 
 ## Documentation
 
@@ -658,6 +706,7 @@ observability hardening.
 - [ADR-027: CLI-Triggered Persistence](docs/adr/0027-cli-triggered-persistence.md)
 - [ADR-028: CLI Scheduled Crawl Mode](docs/adr/0028-cli-scheduled-crawl-mode.md)
 - [ADR-029: CLI Batch/Multi-URL Input](docs/adr/0029-cli-batch-url-input.md)
+- [ADR-030: SQLite Crawl Result Sink](docs/adr/0030-sqlite-crawl-result-sink.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 
