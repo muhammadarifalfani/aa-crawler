@@ -19,6 +19,7 @@ aa-crawler = "aa_crawler:main"
 [dependency-groups]
 dev = [
     "mypy>=2.1,<3",
+    "pip-audit>=2.9,<3",
     "pre-commit>=4,<5",
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",
@@ -58,7 +59,14 @@ select = [
     "TCH",
     "C901",
     "ARG",
+    "S",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# S101 (assert) is pytest's own idiom; S105-S107 (hardcoded-password
+# heuristics) false-positive on synthetic secret/redaction test fixtures.
+# Neither reflects a real security concern in test-only code.
+"tests/**" = ["S101", "S105", "S106", "S107"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
