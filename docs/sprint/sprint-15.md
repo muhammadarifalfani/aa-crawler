@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 15 implementation is complete. Integration verification is
-complete. Documentation alignment is complete. This completion report will
-be merged, local `main` will subsequently be synchronized cleanly with
-`origin/main`, and a final repository-wide verification will run on that
-merged state before formal closure.
+complete. Documentation alignment is complete. This completion report was
+merged, local `main` was subsequently synchronized cleanly with
+`origin/main`, and the final repository-wide verification (Section 7)
+passed on that merged state with no Critical or Major findings.
 
-**Sprint 15 is pending formal closure** (see Section 14).
+**Sprint 15 is formally closed.**
 
 ## 2. Objective
 
@@ -156,8 +156,26 @@ different `requested_url` — produced exactly two rows, each holding the
 latest payload for its URL, not four rows.
 
 The final repository-wide verification, required for closure and run
-after this completion report itself is merged, will be recorded in
-Section 14 below at closure time.
+after this completion report itself was merged, on
+`f8e3f64f47abdd77cd16eecefbaac66b42057c82`, confirmed the same result:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 914 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 95.04%, against the configured 70% threshold
+- `uv lock --check`: passed
+- pre-commit: all hooks passed
+- Critical findings: 0
+- Major findings: 0
+
+The real GitHub Actions pipeline confirmed the same merged state
+independently: both the `pull_request`-event run for this completion
+report's own PR
+(`https://github.com/muhammadarifalfani/aa-crawler/actions/runs/34112253831`)
+and the subsequent `push`-event run on `main`
+(`https://github.com/muhammadarifalfani/aa-crawler/actions/runs/34112347204`)
+completed with a `success` conclusion.
 
 ## 8. Security and safety review
 
@@ -200,7 +218,7 @@ revise or reopen the Sprint 14 completion record.
 - PR #96 — ADR-030 SQLite crawl result sink decision
 - PR #97 — `SqliteCrawlResultSink` implementation and tests
 - PR #98 — README and Engineering Standards alignment
-- PR #(pending) — Sprint 15 completion report (this document)
+- PR #99 — Sprint 15 completion report
 
 ## 12. Sprint 15 closure checklist
 
@@ -220,11 +238,11 @@ revise or reopen the Sprint 14 completion record.
       upsert against the real `sqlite3` module
 - [x] README aligned
 - [x] Engineering Standards aligned
-- [ ] Sprint 15 completion report created (this document)
-- [ ] Sprint 15 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 15 formally closed
+- [x] Sprint 15 completion report created
+- [x] Sprint 15 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 15 formally closed
 
 ## 13. Provisional post-Sprint-15 direction
 
@@ -244,8 +262,10 @@ itself, per the project owner's own stated direction.
 
 ## 14. Completion statement
 
-This report will be merged, local `main` will be synchronized cleanly
-with `origin/main`, and the final repository-wide quality gate will be
-recorded here at closure time.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `f8e3f64f47abdd77cd16eecefbaac66b42057c82`, and the final
+repository-wide quality gate — both the local command sequence and the
+real GitHub Actions pipeline itself — passed on that merged state with no
+Critical or Major findings.
 
-**Sprint 15 is pending formal closure.**
+**Sprint 15 is formally closed.**
