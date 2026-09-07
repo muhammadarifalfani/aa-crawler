@@ -30,7 +30,10 @@ def test_cnn_indonesia_profile_is_enabled_generic_jsonld_data() -> None:
     assert not profile.supports_host("regional.cnnindonesia.com")
 
 
-def test_kompas_profile_is_disabled_with_only_validated_exact_hosts() -> None:
+def test_kompas_profile_is_enabled_with_only_validated_exact_hosts() -> None:
+    """Kompas was enabled in Sprint 11 (a project-owner governance decision);
+    exact-host validation is otherwise unaffected by enabled state.
+    """
     profile = KOMPAS_PROFILE
 
     assert type(profile) is SourceProfile
@@ -42,7 +45,7 @@ def test_kompas_profile_is_disabled_with_only_validated_exact_hosts() -> None:
     )
     assert profile.parser_family == "jsonld_article"
     assert profile.adapter_key is None
-    assert profile.enabled is False
+    assert profile.enabled is True
     assert all(profile.supports_host(hostname) for hostname in profile.domains)
     assert not profile.supports_host("regional.kompas.com")
     assert not profile.supports_host("kompas.com")
@@ -63,6 +66,9 @@ def test_default_profiles_are_immutable_ordered_plain_values() -> None:
 
 
 def test_default_profiles_construct_conflict_free_registry() -> None:
+    """Both current production profiles are enabled; each resolves through
+    normal (non-`include_disabled`) lookup.
+    """
     registry = SourceRegistry(DEFAULT_SOURCE_PROFILES)
 
     assert registry.profiles == DEFAULT_SOURCE_PROFILES
@@ -73,13 +79,35 @@ def test_default_profiles_construct_conflict_free_registry() -> None:
         is CNN_INDONESIA_PROFILE
     )
     assert KOMPAS_PROFILE in registry.profiles
-    assert registry.get_by_source("kompas") is None
-    assert registry.get_by_host("www.kompas.com") is None
-    assert registry.get_by_url("https://www.kompas.com/synthetic/article") is None
-    assert registry.get_by_source("kompas", include_disabled=True) is KOMPAS_PROFILE
+    assert registry.get_by_source("kompas") is KOMPAS_PROFILE
+    assert registry.get_by_host("www.kompas.com") is KOMPAS_PROFILE
     assert (
-        registry.get_by_host("nasional.kompas.com", include_disabled=True)
+        registry.get_by_url("https://www.kompas.com/synthetic/article")
         is KOMPAS_PROFILE
+    )
+
+
+def test_disabled_profile_lookup_mechanism_still_works_for_a_synthetic_source() -> None:
+    """`include_disabled` itself remains fully covered using a synthetic
+    profile, independent of any current production source's real state.
+    """
+    disabled_profile = SourceProfile(
+        source="disabled_example",
+        domains=("disabled.example",),
+        enabled=False,
+    )
+    registry = SourceRegistry((CNN_INDONESIA_PROFILE, disabled_profile))
+
+    assert registry.get_by_source("disabled_example") is None
+    assert registry.get_by_host("disabled.example") is None
+    assert registry.get_by_url("https://disabled.example/synthetic/article") is None
+    assert (
+        registry.get_by_source("disabled_example", include_disabled=True)
+        is disabled_profile
+    )
+    assert (
+        registry.get_by_host("disabled.example", include_disabled=True)
+        is disabled_profile
     )
 
 
@@ -91,9 +119,24 @@ def test_cnn_profile_composes_without_source_specific_parser() -> None:
     assert parser.source_domains == frozenset({"www.cnnindonesia.com"})
 
 
-def test_disabled_kompas_profile_cannot_be_composed() -> None:
+def test_kompas_profile_now_composes_like_any_other_enabled_source() -> None:
+    """Kompas is enabled (Sprint 11); composition succeeds like CNN's."""
+    parser = ParserComposer().create(KOMPAS_PROFILE)
+
+    assert type(parser) is JsonLdArticleParser
+    assert parser.source == "kompas"
+    assert parser.source_domains == frozenset(KOMPAS_PROFILE.domains)
+
+
+def test_disabled_profile_cannot_be_composed() -> None:
+    disabled_profile = SourceProfile(
+        source="disabled_example",
+        domains=("disabled.example",),
+        enabled=False,
+    )
+
     with pytest.raises(ParserCompositionError, match="disabled"):
-        ParserComposer().create(KOMPAS_PROFILE)
+        ParserComposer().create(disabled_profile)
 
 
 def test_cnn_profile_executes_synthetic_generic_article_flow() -> None:

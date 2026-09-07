@@ -348,7 +348,9 @@ def test_unsupported_source_maps_to_accepted_exit_code_with_cleanup(
     _patch_bootstrap(monkeypatch)
     runtimes = _patch_runtime(monkeypatch, service=service)
 
-    exit_code = run_crawl("https://www.kompas.com/invented/article")
+    # The fake service raises regardless of URL; this host is an arbitrary
+    # placeholder, not evidence of any real source's governance state.
+    exit_code = run_crawl("https://unsupported.example.test/invented/article")
 
     captured = capsys.readouterr()
     assert exit_code == EXIT_UNSUPPORTED_SOURCE

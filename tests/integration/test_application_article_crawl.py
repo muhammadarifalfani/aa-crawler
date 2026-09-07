@@ -218,16 +218,25 @@ def test_cross_profile_final_url_stops_before_parser_composition() -> None:
     assert composer.parsers == []
 
 
-def test_disabled_kompas_stops_before_acquisition_or_composition() -> None:
-    registry = SourceRegistry(DEFAULT_SOURCE_PROFILES)
+def test_disabled_synthetic_source_stops_before_acquisition_or_composition() -> None:
+    """Disabled-source rejection remains fully covered using a synthetic
+    profile, independent of any production source's real state (Kompas was
+    enabled in Sprint 11, a project-owner governance decision).
+    """
+    disabled_profile = SourceProfile(
+        source="disabled_example",
+        domains=("disabled.example",),
+        enabled=False,
+    )
+    registry = SourceRegistry((*DEFAULT_SOURCE_PROFILES, disabled_profile))
     fetcher = FakeHtmlFetcher((_document(),))
     composer = RecordingParserComposer()
-    url = "https://www.kompas.com/invented/article"
+    url = "https://disabled.example/invented/article"
 
     with pytest.raises(UnsupportedSourceError):
         _service(registry, fetcher, composer).crawl(url)
 
-    assert registry.get_by_url(url, include_disabled=True) is KOMPAS_PROFILE
+    assert registry.get_by_url(url, include_disabled=True) is disabled_profile
     assert fetcher.calls == []
     assert composer.profiles == []
 
