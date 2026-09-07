@@ -7,9 +7,15 @@ for the whole run instead of one per iteration. It reuses the exact
 ``bootstrap_application()`` -> ``create_application_runtime()`` ->
 ``ArticleCrawlService.crawl()`` sequence ADR-023 already approved and the
 exact CLI-local exit codes ADR-023/ADR-027 already define; no new exit code
-is introduced. Persistence remains the one narrow, reviewed exception to the
-application layer's persistence-unawareness (ADR-024/ADR-027): only this
-module and :mod:`aa_crawler.cli.app` import :mod:`aa_crawler.persistence`.
+is introduced. Persistence remains one of a few narrow, reviewed
+exceptions to the application layer's persistence-unawareness
+(ADR-024/ADR-027): only this module, :mod:`aa_crawler.cli.app`, and
+:mod:`aa_crawler.cli.batch` import :mod:`aa_crawler.persistence`.
+
+ADR-031 adds an injectable ``sink_factory`` parameter, defaulting to
+``FileCrawlResultSink`` to preserve this exact ADR-028 behavior: ``main()``
+resolves the CLI's ``--sink`` argument to a concrete sink class once and
+passes it down here.
 """
 
 from __future__ import annotations
@@ -39,6 +45,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from aa_crawler.application import ApplicationRuntime
+    from aa_crawler.cli.app import SinkFactory
+    from aa_crawler.persistence import BaseCrawlResultSink
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +56,7 @@ __all__ = ["run_scheduled_crawl"]
 def _run_iteration(
     runtime: ApplicationRuntime,
     url: str,
-    sink: FileCrawlResultSink | None,
+    sink: BaseCrawlResultSink | None,
 ) -> int | None:
     """Run one scheduled crawl iteration and apply the ADR-028 failure policy.
 
@@ -100,6 +108,7 @@ def run_scheduled_crawl(
     output: Path | None = None,
     max_runs: int | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    sink_factory: SinkFactory = FileCrawlResultSink,
 ) -> int:
     """Repeat one synchronous article crawl on an interval (ADR-028).
 
@@ -135,6 +144,9 @@ def run_scheduled_crawl(
         sleep: The interval-wait callable, defaulting to ``time.sleep``.
             Tests substitute a deterministic double instead of a real
             wall-clock wait.
+        sink_factory: The concrete sink class to construct when ``output``
+            is supplied (ADR-031). Defaults to ``FileCrawlResultSink``,
+            preserving ADR-028's exact original behavior.
 
     Returns:
         A CLI-local process exit code (see the ``EXIT_*`` constants in
@@ -149,7 +161,7 @@ def run_scheduled_crawl(
         logger.error("scheduled crawl failed: unexpected_failure")
         return EXIT_UNEXPECTED_FAILURE
 
-    sink = FileCrawlResultSink(destination=output) if output is not None else None
+    sink = sink_factory(destination=output) if output is not None else None
 
     try:
         with create_application_runtime() as runtime:

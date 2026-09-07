@@ -10,11 +10,10 @@ the exact ``bootstrap_application()`` -> ``create_application_runtime()``
 -> ``ArticleCrawlService.crawl()`` sequence ADR-023 already approved, one
 reused ``ApplicationRuntime`` for the whole run (never one per URL or per
 pass), and the exact CLI-local exit codes ADR-023/ADR-027/ADR-028 already
-define; no new exit code is introduced. Persistence remains one of the
-few reviewed exceptions to the application layer's persistence-
-unawareness (ADR-024/ADR-027): only this module,
-:mod:`aa_crawler.cli.app`, and :mod:`aa_crawler.cli.scheduler` import
-:mod:`aa_crawler.persistence`.
+define; no new exit code is introduced. Persistence remains one of a few
+reviewed exceptions to the application layer's persistence-unawareness
+(ADR-024/ADR-027): only this module, :mod:`aa_crawler.cli.app`, and
+:mod:`aa_crawler.cli.scheduler` import :mod:`aa_crawler.persistence`.
 
 Per ADR-029, this module's per-URL failure policy deliberately differs
 from :mod:`aa_crawler.cli.scheduler`'s for one condition:
@@ -22,6 +21,11 @@ from :mod:`aa_crawler.cli.scheduler`'s for one condition:
 the pass) rather than terminal, since one bad URL among many should not
 abort the rest of the list — unlike single-URL scheduled mode, where
 retrying the *same* unsupported URL forever would be pointless.
+
+ADR-031 adds an injectable ``sink_factory`` parameter, defaulting to
+``FileCrawlResultSink`` to preserve this exact ADR-029 behavior:
+``main()`` resolves the CLI's ``--sink`` argument to a concrete sink
+class once and passes it down here.
 """
 
 from __future__ import annotations
@@ -50,6 +54,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from aa_crawler.application import ApplicationRuntime
+    from aa_crawler.cli.app import SinkFactory
+    from aa_crawler.persistence import BaseCrawlResultSink
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +65,7 @@ __all__ = ["run_batch_crawl", "run_scheduled_batch_crawl"]
 def _run_one_url(
     runtime: ApplicationRuntime,
     url: str,
-    sink: FileCrawlResultSink | None,
+    sink: BaseCrawlResultSink | None,
 ) -> int | None:
     """Crawl one URL within a batch pass and apply the ADR-029 failure policy.
 
@@ -107,7 +113,7 @@ def _run_one_url(
 def _run_one_pass(
     runtime: ApplicationRuntime,
     urls: Sequence[str],
-    sink: FileCrawlResultSink | None,
+    sink: BaseCrawlResultSink | None,
 ) -> int | None:
     """Crawl every URL in order and return the first terminal exit code.
 
@@ -122,7 +128,12 @@ def _run_one_pass(
     return None
 
 
-def run_batch_crawl(urls: Sequence[str], *, output: Path | None = None) -> int:
+def run_batch_crawl(
+    urls: Sequence[str],
+    *,
+    output: Path | None = None,
+    sink_factory: SinkFactory = FileCrawlResultSink,
+) -> int:
     """Crawl a list of URLs once, in order, then exit (ADR-029).
 
     Bootstraps the application and opens exactly one
@@ -136,9 +147,12 @@ def run_batch_crawl(urls: Sequence[str], *, output: Path | None = None) -> int:
     Args:
         urls: The URLs to crawl, in order. Must be non-empty.
         output: An optional destination path. When supplied, each
-            successful URL's produced item is also appended to it via
-            ``FileCrawlResultSink`` (ADR-024/ADR-027), after that URL's
-            JSON payload has already been printed to stdout.
+            successful URL's produced item is also saved to it via
+            ``sink_factory(destination=output)`` (ADR-024/ADR-027), after
+            that URL's JSON payload has already been printed to stdout.
+        sink_factory: The concrete sink class to construct when ``output``
+            is supplied (ADR-031). Defaults to ``FileCrawlResultSink``,
+            preserving ADR-029's exact original behavior.
 
     Returns:
         A CLI-local process exit code (see the ``EXIT_*`` constants in
@@ -153,7 +167,7 @@ def run_batch_crawl(urls: Sequence[str], *, output: Path | None = None) -> int:
         logger.error("batch crawl failed: unexpected_failure")
         return EXIT_UNEXPECTED_FAILURE
 
-    sink = FileCrawlResultSink(destination=output) if output is not None else None
+    sink = sink_factory(destination=output) if output is not None else None
 
     with create_application_runtime() as runtime:
         logger.info("batch crawl started")
@@ -169,6 +183,7 @@ def run_scheduled_batch_crawl(
     output: Path | None = None,
     max_runs: int | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    sink_factory: SinkFactory = FileCrawlResultSink,
 ) -> int:
     """Repeat one pass over a list of URLs on an interval (ADR-029).
 
@@ -187,14 +202,17 @@ def run_scheduled_batch_crawl(
             the start of the next. The first pass happens immediately,
             with no initial wait.
         output: An optional destination path. When supplied, each
-            successful URL's produced item is also appended to it via
-            ``FileCrawlResultSink`` (ADR-024/ADR-027).
+            successful URL's produced item is also saved to it via
+            ``sink_factory(destination=output)`` (ADR-024/ADR-027).
         max_runs: An optional bound on the number of full passes. When
             ``None`` (the default), the loop continues until interrupted
             or a terminal failure occurs.
         sleep: The interval-wait callable, defaulting to ``time.sleep``.
             Tests substitute a deterministic double instead of a real
             wall-clock wait.
+        sink_factory: The concrete sink class to construct when ``output``
+            is supplied (ADR-031). Defaults to ``FileCrawlResultSink``,
+            preserving ADR-029's exact original behavior.
 
     Returns:
         A CLI-local process exit code (see the ``EXIT_*`` constants in
@@ -209,7 +227,7 @@ def run_scheduled_batch_crawl(
         logger.error("scheduled batch crawl failed: unexpected_failure")
         return EXIT_UNEXPECTED_FAILURE
 
-    sink = FileCrawlResultSink(destination=output) if output is not None else None
+    sink = sink_factory(destination=output) if output is not None else None
 
     try:
         with create_application_runtime() as runtime:
