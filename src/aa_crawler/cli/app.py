@@ -6,6 +6,14 @@ compose one application runtime, execute one article crawl, serialize the
 single resulting item, and translate known exceptions into a small,
 CLI-local exit-code mapping. It does not implement source, robots, retry,
 identity, or parser governance of its own.
+
+ADR-027 adds one optional, off-by-default persistence step: when a caller
+supplies a destination path, the already-produced ``CrawlerItem`` is also
+appended to it via the existing ``FileCrawlResultSink`` (ADR-024), after
+the JSON payload has already been printed to stdout. This is the one
+narrow, reviewed exception to this module's otherwise-persistence-unaware
+design; ``aa_crawler.application.runtime`` and
+``aa_crawler.application.service`` remain fully unaware of persistence.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ from aa_crawler.bootstrap import bootstrap_application
 from aa_crawler.configuration import AACrawlerError
 from aa_crawler.crawler import CrawlerError
 from aa_crawler.observability import correlation_context
+from aa_crawler.persistence import FileCrawlResultSink, PersistenceWriteError
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +41,10 @@ EXIT_UNEXPECTED_FAILURE: Final = 1
 EXIT_UNSUPPORTED_SOURCE: Final = 2
 EXIT_CRAWL_FAILURE: Final = 3
 EXIT_STARTUP_FAILURE: Final = 4
+EXIT_PERSISTENCE_FAILURE: Final = 5
 
 
-def run_crawl(url: str) -> int:
+def run_crawl(url: str, *, output: Path | None = None) -> int:
     """Execute one synchronous article crawl and report its CLI exit code.
 
     Follows the ADR-023 sequence: ``bootstrap_application()`` first, then
@@ -47,9 +57,17 @@ def run_crawl(url: str) -> int:
     fails, and the runtime is always closed before this function returns
     once it has been created.
 
+    Per ADR-027, when ``output`` is supplied, the produced item is also
+    appended to it via ``FileCrawlResultSink`` after the stdout payload has
+    already been printed. A failure at that point does not un-print the
+    payload; it is reported through ``EXIT_PERSISTENCE_FAILURE`` alone.
+
     Args:
         url: The single article URL to crawl, exactly as supplied by the
             caller.
+        output: An optional destination path. When ``None`` (the default),
+            this function's behavior is unchanged from ADR-023 and no
+            reference to ``aa_crawler.persistence`` is exercised.
 
     Returns:
         A CLI-local process exit code (see the ``EXIT_*`` constants).
@@ -65,7 +83,8 @@ def run_crawl(url: str) -> int:
                         "expected exactly one crawler item from the "
                         "current shipped parser family"
                     )
-                payload = json.dumps(dict(items[0].data), sort_keys=True)
+                item = items[0]
+                payload = json.dumps(dict(item.data), sort_keys=True)
         except UnsupportedSourceError:
             logger.error("crawl failed: unsupported_source")
             return EXIT_UNSUPPORTED_SOURCE
@@ -81,4 +100,10 @@ def run_crawl(url: str) -> int:
         else:
             print(payload)
             logger.info("crawl completed")
+            if output is not None:
+                try:
+                    FileCrawlResultSink(destination=output).save(item)
+                except PersistenceWriteError:
+                    logger.error("crawl succeeded but persistence failed")
+                    return EXIT_PERSISTENCE_FAILURE
             return EXIT_SUCCESS

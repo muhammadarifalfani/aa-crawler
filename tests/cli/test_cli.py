@@ -15,6 +15,7 @@ from aa_crawler.application import SourceBoundaryError, UnsupportedSourceError
 from aa_crawler.cli import main
 from aa_crawler.cli.app import (
     EXIT_CRAWL_FAILURE,
+    EXIT_PERSISTENCE_FAILURE,
     EXIT_STARTUP_FAILURE,
     EXIT_SUCCESS,
     EXIT_UNEXPECTED_FAILURE,
@@ -130,9 +131,11 @@ def test_valid_single_url_is_parsed_and_forwarded_unchanged(
     monkeypatch: MonkeyPatch,
 ) -> None:
     received: list[str] = []
+    received_output: list[Path | None] = []
 
-    def fake_run_crawl(url: str) -> int:
+    def fake_run_crawl(url: str, *, output: Path | None = None) -> int:
         received.append(url)
+        received_output.append(output)
         return EXIT_SUCCESS
 
     monkeypatch.setattr(cli_module, "run_crawl", fake_run_crawl)
@@ -141,6 +144,27 @@ def test_valid_single_url_is_parsed_and_forwarded_unchanged(
 
     assert exit_code == EXIT_SUCCESS
     assert received == [_CNN_URL]
+    assert received_output == [None]
+
+
+def test_output_argument_is_parsed_and_forwarded_as_a_path(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    received_output: list[Path | None] = []
+
+    def fake_run_crawl(url: str, *, output: Path | None = None) -> int:
+        del url
+        received_output.append(output)
+        return EXIT_SUCCESS
+
+    monkeypatch.setattr(cli_module, "run_crawl", fake_run_crawl)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = main([_CNN_URL, "--output", str(destination)])
+
+    assert exit_code == EXIT_SUCCESS
+    assert received_output == [destination]
 
 
 # --- Successful execution ----------------------------------------------------
@@ -198,6 +222,119 @@ def test_successful_crawl_does_not_contaminate_stdout_with_logs(
     assert captured.out.strip() == expected_payload
     assert "crawl started" not in captured.out
     assert "crawl completed" not in captured.out
+
+
+# --- CLI-triggered persistence (ADR-027) -------------------------------------
+
+
+def test_default_invocation_never_writes_a_file(
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    item = CrawlerItem({"source": "cnn_indonesia"})
+    service = _FakeService(result=(item,))
+    _patch_bootstrap(monkeypatch)
+    _patch_runtime(monkeypatch, service=service)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = run_crawl(_CNN_URL)
+
+    assert exit_code == EXIT_SUCCESS
+    assert capsys.readouterr().out.strip() == json.dumps(
+        {"source": "cnn_indonesia"}, sort_keys=True
+    )
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_output_argument_persists_the_produced_item(
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    item = CrawlerItem({"source": "cnn_indonesia", "headline": "Invented headline"})
+    service = _FakeService(result=(item,))
+    _patch_bootstrap(monkeypatch)
+    _patch_runtime(monkeypatch, service=service)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = run_crawl(_CNN_URL, output=destination)
+
+    captured = capsys.readouterr()
+    assert exit_code == EXIT_SUCCESS
+    assert json.loads(captured.out) == {
+        "source": "cnn_indonesia",
+        "headline": "Invented headline",
+    }
+    lines = destination.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == {
+        "source": "cnn_indonesia",
+        "headline": "Invented headline",
+    }
+
+
+def test_output_argument_appends_without_deduplication(
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    item = CrawlerItem({"source": "cnn_indonesia"})
+    service = _FakeService(result=(item,))
+    _patch_bootstrap(monkeypatch)
+    _patch_runtime(monkeypatch, service=service)
+    destination = tmp_path / "results.jsonl"
+
+    run_crawl(_CNN_URL, output=destination)
+    _patch_runtime(monkeypatch, service=_FakeService(result=(item,)))
+    run_crawl(_CNN_URL, output=destination)
+
+    capsys.readouterr()
+    lines = destination.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert lines[0] == lines[1]
+
+
+def test_persistence_failure_after_successful_crawl_still_prints_stdout(
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    item = CrawlerItem({"source": "cnn_indonesia"})
+    service = _FakeService(result=(item,))
+    _patch_bootstrap(monkeypatch)
+    _patch_runtime(monkeypatch, service=service)
+    # A destination whose parent directory does not exist makes the real
+    # FileCrawlResultSink raise PersistenceWriteError deterministically,
+    # without needing to fake the sink itself.
+    destination = tmp_path / "does-not-exist-as-a-directory" / "results.jsonl"
+
+    exit_code = run_crawl(_CNN_URL, output=destination)
+
+    captured = capsys.readouterr()
+    assert exit_code == EXIT_PERSISTENCE_FAILURE
+    assert json.loads(captured.out) == {"source": "cnn_indonesia"}
+
+
+def test_persistence_failure_is_logged_conservatively(
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+    caplog: LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    item = CrawlerItem({"source": "cnn_indonesia"})
+    service = _FakeService(result=(item,))
+    _patch_bootstrap(monkeypatch)
+    _patch_runtime(monkeypatch, service=service)
+    destination = tmp_path / "does-not-exist-as-a-directory" / "results.jsonl"
+
+    with caplog.at_level(logging.ERROR, logger="aa_crawler.cli.app"):
+        exit_code = run_crawl(_CNN_URL, output=destination)
+
+    assert exit_code == EXIT_PERSISTENCE_FAILURE
+    messages = [record.getMessage() for record in caplog.records]
+    assert "crawl succeeded but persistence failed" in messages
+    capsys.readouterr()
 
 
 # --- Unsupported source ------------------------------------------------------
