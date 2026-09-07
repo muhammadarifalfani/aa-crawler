@@ -33,7 +33,7 @@ from aa_crawler.composition import ParserComposer
 from aa_crawler.html import HtmlDocument
 from aa_crawler.http import HttpClient, RetryPolicy, TimeoutPolicy
 from aa_crawler.observability import get_correlation_id
-from aa_crawler.sources import CNN_INDONESIA_PROFILE
+from aa_crawler.sources import CNN_INDONESIA_PROFILE, SourceProfile
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -45,7 +45,6 @@ if TYPE_CHECKING:
     from aa_crawler.identity import RequestIdentity
     from aa_crawler.parser import BaseParser
     from aa_crawler.robots import RobotsPolicy
-    from aa_crawler.sources import SourceProfile
 
 _CNN_URL = (
     "https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/"
@@ -368,11 +367,28 @@ def test_cli_process_boundary_rejects_disabled_source_before_acquisition(
     tmp_path: Path,
     capsys: CaptureFixture[str],
 ) -> None:
-    """A disabled production profile must fail before the fake fetcher is used."""
+    """A disabled production profile must fail before the fake fetcher is used.
+
+    Kompas was enabled in Sprint 11 (a project-owner governance decision),
+    so no current production profile is disabled; this test proves the same
+    real-pipeline guarantee using one synthetic disabled profile injected
+    alongside the real ones, exactly as `runtime_module.HttpClient` and
+    similar collaborators are already substituted elsewhere in this module.
+    """
     fetcher, clients = _install_fake_acquisition(monkeypatch)
+    disabled_profile = SourceProfile(
+        source="disabled_example",
+        domains=("disabled.example.test",),
+        enabled=False,
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "DEFAULT_SOURCE_PROFILES",
+        (*runtime_module.DEFAULT_SOURCE_PROFILES, disabled_profile),
+    )
     monkeypatch.chdir(tmp_path)
 
-    exit_code = main(["https://www.kompas.com/invented/article"])
+    exit_code = main(["https://disabled.example.test/invented/article"])
 
     captured = capsys.readouterr()
     assert exit_code == 2

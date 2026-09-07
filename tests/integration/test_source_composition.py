@@ -158,24 +158,52 @@ def test_unknown_or_unsafe_urls_stop_before_composition(url: str) -> None:
     assert registry.get_by_url(url) is None
 
 
-def test_disabled_kompas_stays_blocked_through_composition() -> None:
+def test_kompas_resolves_and_composes_like_any_other_enabled_source() -> None:
+    """Kompas was enabled in Sprint 11 (a project-owner governance decision);
+    it now resolves and composes through the same path as CNN Indonesia.
+    """
     registry = SourceRegistry(DEFAULT_SOURCE_PROFILES)
     url = "https://www.kompas.com/synthetic/article"
 
+    profile = registry.get_by_url(url)
+    assert profile is KOMPAS_PROFILE
+    parser = ParserComposer().create(profile)
+    assert isinstance(parser, JsonLdArticleParser)
+    assert parser.source == "kompas"
+
+
+def test_disabled_synthetic_profile_stays_blocked_through_composition() -> None:
+    """`include_disabled` and composer rejection remain fully covered using
+    a synthetic profile, independent of any production source's real state.
+    """
+    disabled_profile = SourceProfile(
+        source="disabled_example",
+        domains=("disabled.example",),
+        enabled=False,
+    )
+    registry = SourceRegistry((*DEFAULT_SOURCE_PROFILES, disabled_profile))
+    url = "https://disabled.example/synthetic/article"
+
     assert registry.get_by_url(url) is None
     profile = registry.get_by_url(url, include_disabled=True)
-    assert profile is KOMPAS_PROFILE
+    assert profile is disabled_profile
     with pytest.raises(ParserCompositionError, match="disabled"):
         ParserComposer().create(profile)
 
 
-def test_all_explicit_kompas_hosts_share_disabled_profile_without_wildcards() -> None:
-    registry = SourceRegistry(DEFAULT_SOURCE_PROFILES)
+def test_all_explicit_disabled_synthetic_hosts_share_profile_without_wildcards() -> (
+    None
+):
+    disabled_profile = SourceProfile(
+        source="disabled_example",
+        domains=("disabled.example", "regional.disabled.example"),
+        enabled=False,
+    )
+    registry = SourceRegistry((*DEFAULT_SOURCE_PROFILES, disabled_profile))
 
-    for hostname in KOMPAS_PROFILE.domains:
-        assert registry.get_by_host(hostname, include_disabled=True) is KOMPAS_PROFILE
-    assert registry.get_by_host("regional.kompas.com", include_disabled=True) is None
-    assert registry.get_by_host("kompas.com", include_disabled=True) is None
+    for hostname in disabled_profile.domains:
+        assert registry.get_by_host(hostname, include_disabled=True) is disabled_profile
+    assert registry.get_by_host("other.disabled.example", include_disabled=True) is None
 
 
 def test_synthetic_source_uses_identical_generic_flow() -> None:

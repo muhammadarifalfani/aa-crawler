@@ -1,4 +1,13 @@
-"""Approved immutable production source declarations."""
+"""Approved immutable production source declarations.
+
+Kompas was enabled in Sprint 11: an explicit project-owner governance
+decision (not an architectural change) to activate a real second
+production source, made after the project owner confirmed there was no
+objection to crawling it. Enablement records governance state only; it
+does not itself constitute legal authorization, publisher permission,
+robots authorization, rate-limit approval, or operational approval — see
+ADR-020's "Enabled and disabled governance" section.
+"""
 
 from aa_crawler.sources.models import SourceProfile
 
@@ -19,7 +28,7 @@ KOMPAS_PROFILE = SourceProfile(
     ),
     parser_family="jsonld_article",
     adapter_key=None,
-    enabled=False,
+    enabled=True,
 )
 
 DEFAULT_SOURCE_PROFILES = (
