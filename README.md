@@ -742,15 +742,62 @@ invocations.
 | **Sprint 16** | CLI sink selection (`--sink {file,sqlite}`) | **Completed** |
 | **Sprint 17** | Third production source activation (Detik enabled) | **Completed** |
 | **Sprint 18** | CI security scanning (ruff `"S"`, `pip-audit`) | **Completed** |
+| **Sprint 19** | Redirect architecture | Planned |
+| **Sprint 20** | Rate limiting / politeness delay | Planned |
+| **Sprint 21** | Health/liveness signaling | Planned |
+| **Sprint 22** | Authorized live crawl smoke test + scheduled CI vulnerability re-scanning | Planned |
 
-Possible future directions remain provisional, not committed scope: a real
-external source or platform proposal (with its own legal/acquisition/
-credential review), non-HTML content acquisition, a credential/
-authentication mechanism, separately reviewed redirect architecture, broader
-reviewed sources, alternate execution families under ADR-019, persisting
-to more than one sink in a single invocation, concurrent per-URL crawling
-within one pass, a remote/dynamic URL-list source, distributed worker/
-queue concerns, and observability hardening.
+**MVP completion scope (locked 2026-09-07, revised same day):** the
+project owner defined "done" as a minimal production-ready MVP, not an
+open-ended backlog. An initial 3-sprint scope (redirect, health/liveness,
+scheduled vulnerability re-scan) was proposed and locked, then revised
+the same day after a repository-wide investigation found two gaps the
+original scope missed: **every production source has 927 passing tests
+and 95%+ coverage, but zero of that coverage ever touches a real
+network socket** — all HTTP-layer tests use `httpx.MockTransport`
+against the reserved `example.test` domain, by deliberate, documented
+project policy (`docs/architecture/engineering-standards.md`: "Normal
+test execution must not access external networks"). This means no
+production source (`cnn_indonesia`, `kompas`, `detik`) has ever been
+empirically confirmed to successfully fetch and parse a real article,
+and two concrete gaps could block a first real run:
+
+- **No rate limiting or politeness delay anywhere in the acquisition
+  path.** Batch mode's per-URL loop (`src/aa_crawler/cli/batch.py`,
+  `_run_one_pass`) has no delay between individual URLs — only between
+  full passes/iterations — so a real `--urls-file` run would fire
+  requests back-to-back as fast as the network allows, a real risk of
+  being IP-blocked by a real site. `docs/adr/0015-retry-idempotency.md`
+  explicitly lists rate limiting and circuit breaking as unaddressed,
+  not merely low priority.
+- **No live crawl against a real site has ever been authorized or
+  run.** Per `docs/adr/0020-declarative-source-architecture.md`,
+  enabling a source in code "does not replace robots.txt compliance,
+  publisher-policy review, legal review, operational rate limits, or
+  network-level safety controls" — a separate, explicit authorization
+  from the project owner is required before any real network request is
+  ever made against `cnnindonesia.com`, `kompas.com`, or
+  `detik.com`.
+
+The revised 4-sprint scope adds rate limiting/politeness delay
+(Sprint 20) and an explicitly-authorized live crawl smoke test
+(Sprint 22, bundled with the previously-planned scheduled vulnerability
+re-scan) to the original three items. After Sprint 22 closes, the
+project is considered complete under this MVP definition — this time
+with actual evidence the crawler works against real sites, not only
+against synthetic test fixtures.
+
+The following directions were explicitly considered and deferred past the
+MVP (not abandoned, just not required to call the project "done"): a
+fourth-or-later production source or platform proposal (each with its own
+legal/acquisition/credential review), non-HTML content acquisition, a
+credential/authentication mechanism, alternate execution families under
+ADR-019, persisting to more than one sink in a single invocation,
+concurrent per-URL crawling within one pass, a remote/dynamic URL-list
+source, distributed worker/queue concerns (ADR-017), SBOM publication,
+secret-scanning across git history, and performance benchmarking. Any of
+these would require a fresh go-ahead from the project owner before
+becoming a new phase of work.
 
 ## Documentation
 
