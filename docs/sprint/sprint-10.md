@@ -3,12 +3,12 @@
 ## 1. Status
 
 Sprint 10 implementation is complete. Integration verification is
-complete. Documentation alignment is complete. This completion report has
-been created.
+complete. Documentation alignment is complete. This completion report was
+merged, local `main` was subsequently synchronized cleanly with
+`origin/main`, and the final repository-wide verification (Section 9)
+passed on that merged state with no Critical or Major findings.
 
-Formal closure must not be declared until this report is merged, the final
-repository quality gate passes on the merged state, and local `main` is
-synchronized cleanly with `origin/main`.
+**Sprint 10 is formally closed.**
 
 ## 2. Objective
 
@@ -160,6 +160,20 @@ state (`d09ef815866ae0697c91ef89feb60bf301a630b8`) confirmed:
 - Critical findings: 0
 - Major findings: 0
 
+The final repository-wide verification, required for closure and run after
+this completion report itself was merged, on
+`49ae4058fa4bd253eac0fcb3dc2f7386d5778137`, confirmed the same result:
+
+- Ruff: passed
+- Ruff format check: passed
+- mypy: passed
+- pytest: 836 passed, 0 skipped, 0 xfailed, 0 failed, 0 errors
+- Coverage: 94.48%, against the configured 70% threshold
+- `uv lock --check`: passed
+- pre-commit: all hooks passed
+- Critical findings: 0
+- Major findings: 0
+
 ## 10. Security and safety review
 
 - `--output` is off by default; no existing CLI invocation gains a new
@@ -244,6 +258,7 @@ completion record.
 - PR #74 — `--output` implementation, new exit code, and tests (unit and
   real end-to-end integration)
 - PR #75 — README, Engineering Standards, and ADR index alignment
+- PR #76 — Sprint 10 completion report
 
 ## 16. Sprint 10 closure checklist
 
@@ -261,10 +276,10 @@ completion record.
 - [x] Engineering Standards aligned
 - [x] ADR index implementation reference aligned
 - [x] Sprint 10 completion report created
-- [ ] Sprint 10 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 10 formally closed
+- [x] Sprint 10 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 10 formally closed
 
 ## 17. Provisional post-Sprint-10 direction
 
@@ -285,7 +300,9 @@ approval before implementation.
 
 ## 18. Completion statement
 
-Sprint 10 is ready for completion-report review. Formal closure occurs
-only after this report is merged, the full repository quality gate passes
-on the merged state, and local `main` is synchronized cleanly with
-`origin/main`.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `49ae4058fa4bd253eac0fcb3dc2f7386d5778137`, and the final
+repository-wide quality gate passed on that merged state with no Critical
+or Major findings.
+
+**Sprint 10 is formally closed.**
