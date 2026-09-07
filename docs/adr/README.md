@@ -12,7 +12,7 @@ and conditions that require review.
 - **Deferred** — intentionally postponed until a stated trigger occurs.
 - **Superseded** — replaced by a later ADR that preserves the historical record.
 
-Current totals: 21 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+Current totals: 22 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 ## Numbering and filenames
 
@@ -54,3 +54,4 @@ that supersedes the historical record.
 | [ADR-026](0026-microdata-article-parser-family.md) | Microdata article parser family | Accepted | Add a third parser family parsing schema.org Microdata (itemscope/itemprop) directly from HTML, producing the same ArticleItem/CrawlerItem output shape, with no new production source, acquisition change, or dependency | `parser/microdata_article.py`, `sources/models.py`, `composition/parser.py` | Real Microdata publisher proposed, non-HTML acquisition needed, different output shape needed, or fourth parser family creating dispatch-table pressure |
 | [ADR-027](0027-cli-triggered-persistence.md) | CLI-triggered persistence | Accepted | Add one optional `--output PATH` CLI argument that calls the existing FileCrawlResultSink after a successful crawl, off by default, with one new exit code for a post-crawl persistence failure | `cli/app.py`, `cli/__init__.py` | Second sink type, batch/multi-URL input, idempotency requirement, or new production source proposed |
 | [ADR-028](0028-cli-scheduled-crawl-mode.md) | CLI scheduled crawl mode | Accepted | Add an optional `--interval SECONDS` CLI argument that repeats the existing synchronous crawl on one reused ApplicationRuntime, with an injectable sleep, an optional `--max-runs` bound, and a documented recoverable-vs-terminal per-iteration failure policy | `cli/app.py`, `cli/__init__.py` | Concurrent multi-source scheduled crawling, sub-second scheduling precision, or distributed/multi-process coordination |
+| [ADR-029](0029-cli-batch-url-input.md) | CLI batch/multi-URL input | Accepted | Add an optional `--urls-file PATH` CLI argument, mutually exclusive with the positional URL, that crawls a list of URLs once (or repeatedly with `--interval`), with a per-URL recoverable-vs-terminal policy where UnsupportedSourceError is recoverable (unlike ADR-028) and no new partial-failure exit code | `cli/batch.py`, `cli/__init__.py` | Concurrent per-URL crawling within one pass, a remote/dynamic URL-list source, or a caller-visible partial-success distinction |
