@@ -848,7 +848,7 @@ Dependencies are organized in `pyproject.toml`:
 | Group | Purpose | Current packages |
 |-------|---------|------------------|
 | `dependencies` | Runtime packages | `httpx>=0.28.1,<0.29`, `pydantic>=2.13.4,<3`, `pydantic-settings>=2.14.2,<2.15` |
-| `[dependency-groups] dev` | Development tooling | `ruff`, `pytest`, `mypy`, `pre-commit` |
+| `[dependency-groups] dev` | Development tooling | `ruff`, `pytest`, `mypy`, `pre-commit`, `pip-audit` (Sprint 18) |
 
 Dev dependencies must never be imported in runtime code under `src/`.
 
@@ -1263,6 +1263,20 @@ uv run mypy src/                 # Type check
   the check to pass unless branch protection is separately configured on
   GitHub, which is outside this repository's own files.
 - Formatting debates are resolved by tooling, not review comments.
+- Static security analysis (Sprint 18) reuses `ruff check` itself: the
+  `"S"` rule category (flake8-bandit-equivalent — hardcoded credentials,
+  insecure subprocess/eval usage, weak crypto, etc.) is enabled in
+  `pyproject.toml`'s existing `[tool.ruff.lint]` select list, so it runs
+  in both pre-commit and CI with no new tool or CI step. A
+  `[tool.ruff.lint.per-file-ignores]` entry excludes `S101` (`assert` —
+  pytest's own idiom) and `S105`-`S107` (hardcoded-password heuristics
+  that false-positive on synthetic secret/redaction test fixtures) for
+  `tests/**`; `src/` has zero findings.
+- Dependency-vulnerability auditing (Sprint 18) uses `pip-audit` (a new
+  dev dependency) against the locked environment, checking known CVE
+  databases. It runs as its own CI step, not a pre-commit hook — mirroring
+  `uv lock --check`'s existing CI-only precedent, since it depends on an
+  external database rather than being a per-commit code-review concern.
 
 ---
 
@@ -1343,6 +1357,7 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 15 | SQLite crawl result sink completed: ADR-030 accepted, `SqliteCrawlResultSink` added to `aa_crawler.persistence` using only the standard-library `sqlite3` module, upserting by `requested_url` for real idempotency (100% coverage of the new module), `FileCrawlResultSink` unmodified, CLI wiring explicitly deferred, integration verification complete (including a real-process smoke test proving idempotent upsert), documentation aligned |
 | Sprint 16 | CLI sink selection completed: ADR-031 accepted, `--sink {file,sqlite}` added to `cli/__init__.py`, resolved once and threaded through all four crawl entry functions as an injectable `sink_factory` defaulting to `FileCrawlResultSink` (every existing invocation's behavior unchanged when `--sink` is omitted), real-pipeline integration verification complete (including a real `sqlite3` database produced through the CLI), documentation aligned |
 | Sprint 17 | Third production source activation completed: Detik (`news.detik.com` only) enabled as a project-governance decision under ADR-020's ordinary-onboarding pre-authorization (no new ADR), per-profile and composition test coverage added mirroring CNN/Kompas, `jsonld_article` compatibility assumed but not live-verified, integration verification complete, documentation aligned |
+| Sprint 18 | CI security scanning completed: ruff's `"S"` rule category enabled (zero new dependency, zero new CI step, `src/` zero findings, `tests/**` per-file-ignores for expected false positives), `pip-audit` added as a new CI-only step auditing the locked dependency set (no known vulnerabilities), no new ADR (dev-tooling only, mirroring Sprint 12), real GitHub Actions verification complete, documentation aligned |
 
 ### 15.3 ADR Triggers
 
