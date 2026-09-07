@@ -11,12 +11,12 @@ validated request identity, deterministic HTTP policies, and source-agnostic
 article composition with application-level orchestration and explicit runtime
 resource ownership.
 
-**Current status:** Sprints 5, 6, 7, and 8 are complete and closed. Sprint 9
-(a Microdata article parser family) is in progress: ADR-026 is Accepted,
-`SourceProfile`/`ParserComposer` now support three closed,
-statically-dispatched parser families, and integration verification
-confirmed the existing `jsonld_article`/`generic_json_article` paths, the
-CLI, and the persistence boundary are all unaffected.
+**Current status:** Sprints 5 through 9 are complete and closed. Sprint 10
+(CLI-triggered persistence) is in progress: ADR-027 is Accepted, the CLI
+gained one optional `--output` argument that reuses the existing
+`FileCrawlResultSink`, and integration verification confirmed default CLI
+behavior (no `--output`) is unchanged while the new path works end-to-end
+through the real pipeline.
 
 ## Current capabilities
 
@@ -38,12 +38,14 @@ CLI, and the persistence boundary are all unaffected.
 - Network-isolated CLI process-boundary integration verification exercising
   real bootstrap, runtime, source, and parser components
 - An optional, application-level persistence port (`BaseCrawlResultSink`)
-  with one minimal append-only file sink (`FileCrawlResultSink`), reused by
-  callers explicitly; never constructed by `ArticleCrawlService`,
-  `ApplicationRuntime`, or `aa_crawler.cli`
+  with one minimal append-only file sink (`FileCrawlResultSink`); never
+  constructed by `ArticleCrawlService` or `ApplicationRuntime`
 - Three closed, statically-dispatched parser families (`jsonld_article`,
   `generic_json_article`, and `microdata_article`), with `adapter_key`
   remaining reserved and unconditionally rejected
+- An optional CLI `--output PATH` flag (ADR-027) that appends the crawl
+  result to a file via `FileCrawlResultSink`, off by default; default CLI
+  behavior is unchanged when it is omitted
 
 ## Current limitations
 
@@ -59,17 +61,21 @@ CLI, and the persistence boundary are all unaffected.
 - Dynamic adapters and plugin runtimes are not implemented.
 - The production source set is intentionally small, and live crawling remains
   governance-controlled.
-- Persistence is an explicit, optional, caller-composed primitive only: no
-  worker, queue, scheduler, distributed execution, asynchronous runtime,
-  browser rendering, or live profile reload exists, and no CLI or
-  application-service flag wires persistence into the crawl flow.
+- Persistence is an explicit, optional primitive: no worker, queue,
+  scheduler, distributed execution, asynchronous runtime, browser
+  rendering, or live profile reload exists. The CLI's `--output` flag
+  (ADR-027) is the only wiring between the CLI and persistence; the
+  application service and runtime remain fully unaware of persistence.
 - The shipped file sink is append-only with no deduplication, no idempotency
-  guarantee, and no database or schema selection.
+  guarantee, and no database or schema selection — including when triggered
+  through the CLI's `--output` flag.
 - The synchronous runtime provides no thread-safety guarantee.
-- The CLI accepts exactly one URL per invocation: no batch input, no file or
-  stdin input, and no JSON Lines output.
+- The CLI accepts exactly one URL per invocation: no batch input and no
+  file or stdin input. Stdout always carries exactly one JSON object; only
+  the optional `--output` file (not stdout) is JSON Lines.
 - The CLI has no flag that overrides source, robots, retry, identity, or
-  parser behavior; it cannot bypass source governance.
+  parser behavior; it cannot bypass source governance. `--output` selects a
+  persistence destination only — it does not affect what is crawled.
 
 ## Architecture overview
 
@@ -170,11 +176,17 @@ standard library (`argparse`, `json`, `uuid`).
 
 ```bash
 aa-crawler https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/example-story
+
+# Also append the result to a file (ADR-027); omit -o for the same
+# behavior as above:
+aa-crawler https://www.cnnindonesia.com/nasional/20990101010101-20-9999999/example-story \
+  -o data/processed/results.jsonl
 ```
 
-The CLI takes exactly one positional URL per invocation. There are no
-subcommands and no flags that override source, robots, retry, identity, or
-parser behavior.
+The CLI takes exactly one positional URL per invocation, plus one optional
+`-o`/`--output PATH` argument. There are no subcommands and no flags that
+override source, robots, retry, identity, or parser behavior; `--output`
+selects a persistence destination only.
 
 #### Output contract
 
@@ -203,9 +215,12 @@ future parser family with a different output shape.
 | `2` | Unsupported or disabled source |
 | `3` | Crawl-domain failure (acquisition, robots, source-boundary, or parsing) |
 | `4` | Configuration or startup failure |
+| `5` | Crawl succeeded, but the `--output` persistence write failed (ADR-027) |
 
 These are CLI-local process-boundary semantics only. They do not introduce
-or replace a project-wide exception hierarchy or error taxonomy.
+or replace a project-wide exception hierarchy or error taxonomy. Exit code
+`5` is reported only when `--output` is supplied; the JSON payload is
+already on stdout by the time it can occur.
 
 ### Persistence boundary
 
@@ -216,9 +231,9 @@ serializes `CrawlerItem.data` to JSON and appends it as one line to a
 caller-supplied file path — reusing the exact `dict(item.data)` →
 `json.dumps(...)` pattern already used by `aa_crawler.cli`.
 
-This package is never imported by `ArticleCrawlService`, `ApplicationRuntime`,
-or `aa_crawler.cli`; a static test statically verifies this. A caller that
-already holds a produced `CrawlerItem` composes a sink explicitly:
+This package is never imported by `ArticleCrawlService` or
+`ApplicationRuntime`; a static test verifies this. A caller that already
+holds a produced `CrawlerItem` composes a sink explicitly:
 
 ```python
 from pathlib import Path
@@ -234,6 +249,14 @@ for item in items:
 serialization or the durable write fails. The sink does not deduplicate,
 overwrite, or guarantee idempotency; repeated `save()` calls with the same
 item append the same line again.
+
+Per ADR-027, `aa_crawler.cli.app` is the one deliberate exception to this
+package's optionality: when the CLI's `--output` argument is supplied, it
+constructs this same `FileCrawlResultSink` and calls `save()` after the
+JSON payload has already been printed to stdout. `aa_crawler.cli.app`
+imports `aa_crawler.persistence` only for this purpose; a static test now
+asserts this positively, alongside the unchanged negative assertion for
+`ArticleCrawlService` and `ApplicationRuntime`.
 
 ### Request identity
 
@@ -476,14 +499,15 @@ invocations.
 | **Sprint 6** | Operational CLI process boundary | **Completed** |
 | **Sprint 7** | Application-level persistence boundary | **Completed** |
 | **Sprint 8** | Extensible parser-family composition seam | **Completed** |
-| **Sprint 9** | Microdata article parser family | **In progress** |
+| **Sprint 9** | Microdata article parser family | **Completed** |
+| **Sprint 10** | CLI-triggered persistence | **In progress** |
 
 Possible future directions remain provisional, not committed scope: a real
 external source or platform proposal (with its own legal/acquisition/
 credential review), non-HTML content acquisition, a credential/
 authentication mechanism, separately reviewed redirect architecture, broader
-reviewed sources, alternate execution families under ADR-019,
-CLI-triggered persistence, worker/queue/scheduler concerns, and
+reviewed sources, alternate execution families under ADR-019, a second
+concrete persistence sink, worker/queue/scheduler concerns, and
 observability hardening.
 
 ## Documentation
@@ -499,6 +523,7 @@ observability hardening.
 - [ADR-024: Application-Level Persistence Boundary for Crawl Results](docs/adr/0024-application-level-persistence-boundary.md)
 - [ADR-025: Extensible Parser-Family Composition Seam](docs/adr/0025-extensible-parser-family-composition.md)
 - [ADR-026: Microdata Article Parser Family](docs/adr/0026-microdata-article-parser-family.md)
+- [ADR-027: CLI-Triggered Persistence](docs/adr/0027-cli-triggered-persistence.md)
 - [Sprint 3 completion record](docs/sprint/sprint-3.md)
 - [Contribution guide](CONTRIBUTING.md)
 
