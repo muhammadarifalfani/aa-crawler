@@ -2,12 +2,13 @@
 
 ## 1. Status
 
-Sprint 19 Architecture Discovery, implementation, integration
-verification, and documentation alignment are complete. This completion
-report is pending formal closure: it will be patched with the final
-verified merge SHA and real GitHub Actions run evidence once it is
-itself merged, matching the pattern used for every prior sprint's
-closure this project.
+Sprint 19 implementation is complete. Integration verification is
+complete. Documentation alignment is complete. This completion report
+was merged, local `main` was subsequently synchronized cleanly with
+`origin/main`, and the final repository-wide verification (Section 6)
+passed on that merged state with no Critical or Major findings.
+
+**Sprint 19 is formally closed.**
 
 ## 2. Objective
 
@@ -139,6 +140,22 @@ Real GitHub Actions runs confirmed each merge independently:
   and the `push` run on `main` at `e07d8cf`
   (`https://github.com/muhammadarifalfani/aa-crawler/actions/runs/34138589103`)
   both completed with a `success` conclusion.
+- Completion report (`2b23bac`): `pull_request` run
+  (`https://github.com/muhammadarifalfani/aa-crawler/actions/runs/34139196997`)
+  and the `push` run on `main` at `c9d9d1d`
+  (`https://github.com/muhammadarifalfani/aa-crawler/actions/runs/34139364524`)
+  both completed with a `success` conclusion.
+
+The final repository-wide verification, required for closure and run
+after this completion report itself was merged, on
+`c9d9d1ddf55e77b66b5d3399db6b15cffbf3116e`, confirmed:
+
+- `uv lock --check`: passed (no dependency change this sprint)
+- `uv sync --locked`: passed
+- pre-commit: all hooks passed (ruff check, ruff format, mypy, pytest)
+- pytest: 941 passed, 95.09% coverage, against the configured 70%
+  threshold
+- `pip-audit`: no known vulnerabilities found
 
 Critical findings: 0. Major findings: 0.
 
@@ -194,7 +211,8 @@ completion record.
 - PR #115 — ADR-032 (Bounded Redirect Following) decision document
 - PR #116 — Bounded redirect following implementation
 - PR #117 — README and Engineering Standards alignment
-- PR #118 — Sprint 19 completion report (this document)
+- PR #118 — Sprint 19 completion report
+- PR #119 — Sprint 19 formal closure (this patch)
 
 ## 11. Sprint 19 closure checklist
 
@@ -215,10 +233,10 @@ completion record.
 - [x] README aligned
 - [x] Engineering Standards aligned
 - [x] Sprint 19 completion report created
-- [ ] Sprint 19 completion report merged
-- [ ] `main` synchronized after completion-report merge
-- [ ] Final repository verification passed after merge
-- [ ] Sprint 19 formally closed
+- [x] Sprint 19 completion report merged
+- [x] `main` synchronized after completion-report merge
+- [x] Final repository verification passed after merge
+- [x] Sprint 19 formally closed
 
 ## 12. Provisional post-Sprint-19 direction
 
@@ -235,12 +253,10 @@ and drafts an ADR where warranted.
 
 ## 13. Completion statement
 
-Implementation, integration verification, and documentation alignment
-for Sprint 19 are complete, each independently confirmed via real
-GitHub Actions runs. Formal closure — synchronizing `main` after this
-report itself merges, and a final repository-wide verification on that
-merged state — is pending and will be recorded in a follow-up patch to
-this report, matching every prior sprint's closure pattern this project
-has followed.
+This report was merged, local `main` was synchronized cleanly with
+`origin/main` at `c9d9d1ddf55e77b66b5d3399db6b15cffbf3116e`, and the
+final repository-wide quality gate — both the local command sequence
+and the real GitHub Actions pipeline itself — passed on that merged
+state with no Critical or Major findings.
 
-**Sprint 19 is pending formal closure.**
+**Sprint 19 is formally closed.**
