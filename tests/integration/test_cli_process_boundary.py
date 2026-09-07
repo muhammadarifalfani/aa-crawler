@@ -712,3 +712,66 @@ def test_cli_process_boundary_persistence_failure_still_prints_real_stdout(
     payload = json.loads(captured.out)
     assert payload["source"] == "cnn_indonesia"
     assert not destination.exists()
+
+
+# --- 17. CLI scheduled crawl mode (ADR-028) ----------------------------------
+
+
+def test_cli_process_boundary_scheduled_mode_produces_json_and_success_exit(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """Drive the real pipeline through scheduled mode via --interval.
+
+    ``--max-runs 1`` bounds this to exactly one iteration so the loop
+    returns before ever calling ``sleep`` (ADR-028 breaks before the wait
+    once the bound is reached), keeping this test fully deterministic and
+    free of any real wall-clock wait. Repeated-iteration mechanics
+    themselves (interval waiting, --max-runs > 1, the recoverable-vs-
+    terminal failure policy) are proven in depth against a fake sleep in
+    ``tests/cli/test_scheduler.py``; this test proves only that scheduled
+    mode reaches the same real bootstrap, runtime, registry, and parser
+    composition as single-shot mode does.
+    """
+    fetcher, clients = _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main([_CNN_URL, "--interval", "300", "--max-runs", "1"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out.strip())
+    assert exit_code == 0
+    assert payload["source"] == "cnn_indonesia"
+    assert fetcher.calls == [(_CNN_URL, None)]
+    assert clients[0].close_count == 1
+
+
+def test_cli_process_boundary_scheduled_mode_output_persists_the_real_result(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    """Scheduled mode reuses the same --output persistence path as ADR-027."""
+    _install_fake_acquisition(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    destination = tmp_path / "results.jsonl"
+
+    exit_code = main(
+        [
+            _CNN_URL,
+            "--interval",
+            "300",
+            "--max-runs",
+            "1",
+            "--output",
+            str(destination),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    stdout_payload = json.loads(captured.out.strip())
+    assert exit_code == 0
+    lines = destination.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == stdout_payload
