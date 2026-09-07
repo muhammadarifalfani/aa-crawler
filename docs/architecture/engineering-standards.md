@@ -393,28 +393,30 @@ ADR-014 (user-agent ownership), ADR-015 (retry idempotency), ADR-020
 orchestration), ADR-022 (application runtime composition and resource
 ownership), ADR-023 (CLI application entry point and process boundary),
 ADR-024 (application-level persistence boundary for crawl results), ADR-025
-(extensible parser-family composition seam), and ADR-026 (Microdata article
-parser family) are Accepted and implemented. ADR-016 (logging-redaction
-scope) and ADR-019 (future execution families) remain Proposed. ADR-018
-(error-root taxonomy) remains Deferred. ADR-017 (metadata portability) also
-remains Deferred: ADR-024, ADR-025, and ADR-026 together narrowly answer its
-"persistence" and "multiple parser families"/"custom parser or adapter
-behavior" review triggers with an optional persistence port and two closed,
+(extensible parser-family composition seam), ADR-026 (Microdata article
+parser family), and ADR-027 (CLI-triggered persistence) are Accepted and
+implemented. ADR-016 (logging-redaction scope) and ADR-019 (future
+execution families) remain Proposed. ADR-018 (error-root taxonomy) remains
+Deferred. ADR-017 (metadata portability) also remains Deferred: ADR-024,
+ADR-025, and ADR-026 together narrowly answer its "persistence" and
+"multiple parser families"/"custom parser or adapter behavior" review
+triggers with an optional persistence port and two closed,
 statically-dispatched additional parser families, but none resolves plugin,
 queue, or worker portability, so the status is unchanged. Current totals are
-19 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+20 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 Async execution, browser automation, dynamic plugins, distributed crawling,
-workers, queues, metrics, tracing, CLI-triggered persistence, credentialed/
-authenticated outbound requests, non-HTML content acquisition, scheduling,
-thread-safety guarantees, automatic redirects, and live profile reload
-remain unimplemented or conditional future work. An optional, caller-composed
-persistence primitive exists (see Persistence boundary below); it is not
-wired into the CLI or application service. Two additional parser families
-(`generic_json_article`, `microdata_article`) exist to prove multi-family
-composition (see Parser-family composition below); no production source
-uses either, and `adapter_key` remains reserved and unconditionally
-rejected.
+workers, queues, metrics, tracing, credentialed/authenticated outbound
+requests, non-HTML content acquisition, scheduling, thread-safety
+guarantees, automatic redirects, and live profile reload remain
+unimplemented or conditional future work. The optional, caller-composed
+persistence primitive (see Persistence boundary below) is now also
+reachable through the CLI's optional `--output` argument (ADR-027); the
+application service and runtime remain fully unaware of persistence
+either way. Two additional parser families (`generic_json_article`,
+`microdata_article`) exist to prove multi-family composition (see
+Parser-family composition below); no production source uses either, and
+`adapter_key` remains reserved and unconditionally rejected.
 
 ### Operational CLI process boundary
 
@@ -461,10 +463,13 @@ unexported.
 | `2` | Unsupported or disabled source (`UnsupportedSourceError`) |
 | `3` | Other crawl-domain failure (any other `CrawlerError` subtype) |
 | `4` | Configuration/startup failure (`AACrawlerError`/`ConfigurationError`) |
+| `5` | Crawl succeeded, but the `--output` persistence write failed (`PersistenceWriteError`, ADR-027) |
 
 This mapping is CLI-local only. It introduces no universal project error
 taxonomy, does not alter the existing exception hierarchy, and does not
-resolve ADR-018 (error-root taxonomy), which remains Deferred.
+resolve ADR-018 (error-root taxonomy), which remains Deferred. Code `5` is
+reachable only when `--output` is supplied; the stdout payload has already
+been printed by the time it can occur.
 
 #### stdout, logging, and correlation context
 
@@ -491,6 +496,21 @@ on a known governance rejection, and on an unexpected failure after runtime
 creation is owned entirely by `ApplicationRuntime`/ADR-022; the CLI performs
 no secondary cleanup of resources it does not own.
 
+#### CLI-triggered persistence
+
+`aa_crawler.cli` implements ADR-027's one narrow, reviewed exception to the
+Persistence boundary's optionality below. `-o`/`--output PATH` is an
+optional argument, absent by default; when omitted, `run_crawl()`'s
+behavior is byte-for-byte unchanged from ADR-023, including no import-time
+or construction-time reference to `aa_crawler.persistence` on that code
+path. When supplied, `aa_crawler.cli.app.run_crawl()` constructs the
+existing `FileCrawlResultSink` (ADR-024) and calls `save()` with the
+produced `CrawlerItem`, strictly after the JSON payload has already been
+printed to stdout. A subsequent `PersistenceWriteError` maps to exit code
+`5` without un-printing that payload. No new sink type, sink-selection
+mechanism, or dependency is introduced; the CLI still selects nothing
+about source, robots, retry, identity, or parser behavior.
+
 ### Persistence boundary
 
 `aa_crawler.persistence` is an optional, application-level port implementing
@@ -502,18 +522,23 @@ ADR-024. It owns:
   `dict(item.data)` → `json.dumps(...)` serialization pattern and appends
   the result as one JSON Lines record to a caller-supplied destination.
 
-It explicitly does not own CLI wiring, database or schema selection,
-worker/queue integration, or idempotency guarantees — `save()` may append a
-duplicate line if called twice with the same item. Serialization and write
+It explicitly does not own database or schema selection, worker/queue
+integration, or idempotency guarantees — `save()` may append a duplicate
+line if called twice with the same item. Serialization and write
 failures both raise `PersistenceWriteError`, a `CrawlerError` subclass,
 rather than leaking `TypeError`/`OSError` directly.
 
-`ArticleCrawlService`, `ApplicationRuntime`, and `aa_crawler.cli` never
-import `aa_crawler.persistence`; this optionality is verified statically
-(via `ast` module inspection) rather than by exercising runtime behavior,
-since the guarantee under test is the absence of any reference at all. A
-caller that already holds a produced `CrawlerItem` composes a sink
-explicitly, outside the application runtime's ownership.
+`ArticleCrawlService` and `ApplicationRuntime` never import
+`aa_crawler.persistence`; this optionality is verified statically (via
+`ast` module inspection) rather than by exercising runtime behavior, since
+the guarantee under test is the absence of any reference at all. Per
+ADR-027, `aa_crawler.cli.app` is the one deliberate, tested exception: it
+imports `aa_crawler.persistence` only to support `--output`, and a
+separate static assertion positively confirms that import exists, so the
+narrowed boundary is tested both ways rather than left as a silent gap. A
+caller that already holds a produced `CrawlerItem` — whether the CLI or
+any other code — composes a sink explicitly, outside the application
+runtime's ownership.
 
 ### Parser-family composition
 
@@ -1020,6 +1045,20 @@ family-specific knowledge. No test exercises real network acquisition or
 any credential mechanism, since neither exists for either proof-of-concept
 family.
 
+Sprint 10 adds tests for CLI-triggered persistence (ADR-027).
+`tests/cli/test_cli.py` covers the default invocation writing no file,
+`--output` durably appending the expected JSON line, appending without
+deduplication across repeated invocations, and a persistence failure after
+a successful crawl still printing stdout and logging conservatively.
+`tests/integration/test_cli_process_boundary.py` proves the same three
+behaviors through the real end-to-end pipeline (real bootstrap, runtime,
+source registry, and parser, with only the acquisition leaf faked and
+network-guarded). `tests/persistence/test_optionality.py` was updated to
+assert the narrowed boundary both ways: `application.runtime` and
+`application.service` still never import `aa_crawler.persistence`, and
+`aa_crawler.cli.app` now positively does. No test performs a live network
+acquisition of a real source.
+
 ### 11.4 Coverage Targets
 
 | Phase | Target |
@@ -1181,8 +1220,9 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 6 | Operational CLI process boundary completed: ADR-023 accepted, CLI implemented, integration verification complete, documentation aligned |
 | Sprint 7 | Application-level persistence boundary completed: ADR-024 accepted, persistence port and file sink implemented, integration verification complete, documentation aligned |
 | Sprint 8 | Extensible parser-family composition seam completed: ADR-025 accepted, SourceProfile/ParserComposer support two closed parser families, integration verification complete, documentation aligned |
-| Sprint 9 | Microdata article parser family in progress: ADR-026 accepted, SourceProfile/ParserComposer support a third closed parser family, integration verification complete, documentation alignment in progress |
-| Sprint 10 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging, performance benchmarks, security scanning (`bandit`), dependency audit automation |
+| Sprint 9 | Microdata article parser family completed: ADR-026 accepted, SourceProfile/ParserComposer support a third closed parser family, integration verification complete, documentation aligned |
+| Sprint 10 | CLI-triggered persistence in progress: ADR-027 accepted, CLI gained an optional --output argument reusing FileCrawlResultSink, integration verification complete, documentation alignment in progress |
+| Sprint 11 | CI pipeline (GitHub Actions), coverage reporting, structured JSON logging, performance benchmarks, security scanning (`bandit`), dependency audit automation |
 
 ### 15.3 ADR Triggers
 
