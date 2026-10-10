@@ -23,6 +23,33 @@ def test_request_conversion_preserves_transport_fields() -> None:
     assert converted.content == b"request-body"
 
 
+def test_request_conversion_preserves_query_string_in_url() -> None:
+    request = CrawlerRequest(url="https://example.test/resource?id=7&page=all")
+
+    converted = to_httpx_request(request)
+
+    assert converted.url == "https://example.test/resource?id=7&page=all"
+
+
+def test_request_conversion_leaves_url_encoding_untouched_without_params() -> None:
+    request = CrawlerRequest(url="https://example.test/resource?q=a%20b&q=c")
+
+    converted = to_httpx_request(request)
+
+    assert str(converted.url) == "https://example.test/resource?q=a%20b&q=c"
+
+
+def test_request_conversion_appends_params_to_existing_query_string() -> None:
+    request = CrawlerRequest(
+        url="https://example.test/resource?id=7",
+        query_params={"page": "2"},
+    )
+
+    converted = to_httpx_request(request)
+
+    assert converted.url == "https://example.test/resource?id=7&page=2"
+
+
 def test_request_conversion_does_not_interpret_metadata() -> None:
     request = CrawlerRequest(
         url="https://example.test/resource",
