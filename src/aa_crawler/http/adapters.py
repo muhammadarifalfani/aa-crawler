@@ -15,13 +15,18 @@ def to_httpx_request(request: CrawlerRequest) -> httpx.Request:
 
     Returns:
         An HTTPX request containing the same method, URL, headers, query
-        parameters, and body.
+        parameters, and body. A query string already present in the URL is
+        preserved; explicit query parameters are appended to it.
     """
+    # Passing ``params`` to httpx replaces the URL's own query string even
+    # when it is empty, so parameters are merged into the URL here instead.
+    url: str | httpx.URL = request.url
+    if request.query_params:
+        url = httpx.URL(request.url).copy_merge_params(request.query_params)
     return httpx.Request(
         method=request.method,
-        url=request.url,
+        url=url,
         headers=request.headers,
-        params=request.query_params,
         content=request.body,
     )
 

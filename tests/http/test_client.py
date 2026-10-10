@@ -37,6 +37,28 @@ def test_client_executes_with_mocked_transport() -> None:
     assert response.body == b"response-body"
 
 
+def test_client_delivers_url_query_string_to_transport() -> None:
+    observed_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_urls.append(str(request.url))
+        return httpx.Response(200, request=request)
+
+    with HttpClient(transport=httpx.MockTransport(handler)) as client:
+        client.send(CrawlerRequest(url="https://example.test/a?id=7&page=all"))
+        client.send(
+            CrawlerRequest(
+                url="https://example.test/b?id=7",
+                query_params={"page": "2"},
+            )
+        )
+
+    assert observed_urls == [
+        "https://example.test/a?id=7&page=all",
+        "https://example.test/b?id=7&page=2",
+    ]
+
+
 def test_client_applies_default_timeout_policy() -> None:
     observed_timeout: object = None
 
