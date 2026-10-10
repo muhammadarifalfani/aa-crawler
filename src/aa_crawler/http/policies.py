@@ -114,3 +114,24 @@ class RetryPolicy:
             return 0.0
         uncapped_backoff = self.backoff_base * float(2 ** (attempt_number - 2))
         return min(uncapped_backoff, self.backoff_max)
+
+
+@dataclass(frozen=True, slots=True)
+class RateLimitPolicy:
+    """Minimum interval, in seconds, between requests to the same host.
+
+    A value of zero disables limiting entirely (ADR-033).
+    """
+
+    min_interval_seconds: float = 0.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "min_interval_seconds",
+            _validated_seconds(
+                self.min_interval_seconds,
+                field_name="min_interval_seconds",
+                positive=False,
+            ),
+        )

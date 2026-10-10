@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, cast
 
+import httpx
 import pytest
 
 from aa_crawler.application import (
@@ -15,7 +16,8 @@ from aa_crawler.application import (
 from aa_crawler.composition import ParserComposer
 from aa_crawler.crawler import CrawlerItem, CrawlerRequest, CrawlerResponse
 from aa_crawler.html import HtmlDocument, HtmlFetcher
-from aa_crawler.http import HttpClient
+from aa_crawler.http import HttpClient, RateLimitPolicy
+from aa_crawler.http import client as http_client_module
 from aa_crawler.identity import RequestIdentity
 from aa_crawler.parser import ArticleParserError, BaseParser, JsonLdArticleParser
 from aa_crawler.robots import RobotsPolicy
@@ -472,3 +474,67 @@ def test_real_redirect_within_same_profile_succeeds() -> None:
 
     assert result[0].data["source_domain"] == "m.example.test"
     assert composer.profiles == [profile]
+
+
+def test_real_http_client_spaces_requests_per_host_across_robots_page_and_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 0.0
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        nonlocal now
+        sleeps.append(seconds)
+        now += seconds
+
+    monkeypatch.setattr(http_client_module, "_sleep", fake_sleep)
+
+    profile = SourceProfile(
+        source="example_news",
+        domains=("news.example.test", "m.example.test"),
+    )
+    identity = RequestIdentity(product_version="1.0.0")
+    requested_url = "https://news.example.test/article?input=one"
+    final_url = "https://m.example.test/article"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.endswith("/robots.txt"):
+            return httpx.Response(
+                200,
+                content=b"User-agent: *\nAllow: /",
+                request=request,
+            )
+        if url == requested_url:
+            return httpx.Response(
+                301,
+                headers={"Location": final_url},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+            content=_synthetic_html(final_url).encode("utf-8"),
+            request=request,
+        )
+
+    with HttpClient(
+        rate_limit_policy=RateLimitPolicy(min_interval_seconds=2.0),
+        transport=httpx.MockTransport(handler),
+        clock=lambda: now,
+    ) as http_client:
+        fetcher = HtmlFetcher(
+            http_client=http_client,
+            robots_policy=RobotsPolicy(http_client=http_client, identity=identity),
+            identity=identity,
+        )
+        result = ArticleCrawlService(
+            source_registry=SourceRegistry((profile,)),
+            html_fetcher=fetcher,
+            parser_composer=cast("ParserComposer", RecordingParserComposer()),
+        ).crawl(requested_url)
+
+    assert result[0].data["source_domain"] == "m.example.test"
+    # news robots.txt -> (wait) -> news 301; m robots.txt is a first contact
+    # with that host -> (wait) -> m page. Two waits, one per repeated host.
+    assert sleeps == [2.0, 2.0]
