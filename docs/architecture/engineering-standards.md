@@ -207,12 +207,17 @@ global dependency construction are prohibited.
   for mapping inputs.
 - HTTPX is isolated behind `HttpClient`; domain metadata must not configure
   transport behavior.
-- `TimeoutPolicy` and `RetryPolicy` are explicit constructor dependencies.
+- `TimeoutPolicy` and `RetryPolicy` are explicit constructor dependencies;
+  `RateLimitPolicy` is an optional one that defaults to no limiting.
 - `RetryPolicy` owns automatic retry eligibility. Only GET and HEAD may receive
   bounded retries; every other method receives one physical transport attempt.
   Request metadata and higher layers cannot broaden eligibility.
 - Retry behavior uses the bounded status and transient-exception policy,
   deterministic exponential backoff, and no jitter or `Retry-After` handling.
+- `RateLimitPolicy` owns the per-host politeness delay (ADR-033): a minimum
+  interval between requests to the same exact hostname, enforced inside
+  `HttpClient.send()` so pages, `robots.txt`, redirect hops, and retries are
+  all covered. The production runtime supplies 2.0 seconds.
 - `RobotsPolicy` is the only robots authority used by HTML acquisition.
 - `HtmlFetcher` performs deterministic content-type validation and strict
   decoding.
@@ -369,7 +374,7 @@ The implemented construction order is:
 
 1. Resolve `importlib.metadata.version("aa-crawler")`.
 2. Construct one `RequestIdentity`.
-3. Construct `TimeoutPolicy` and `RetryPolicy`.
+3. Construct `TimeoutPolicy`, `RetryPolicy`, and `RateLimitPolicy`.
 4. Construct `SourceRegistry(DEFAULT_SOURCE_PROFILES)` and `ParserComposer`.
 5. Create and enter one `HttpClient` under a private `ExitStack`.
 6. Construct `RobotsPolicy` and `HtmlFetcher` with the same exact identity.
@@ -412,8 +417,9 @@ ADR-024 (application-level persistence boundary for crawl results), ADR-025
 (extensible parser-family composition seam), ADR-026 (Microdata article
 parser family), ADR-027 (CLI-triggered persistence), ADR-028 (CLI
 scheduled crawl mode), ADR-029 (CLI batch/multi-URL input), ADR-030
-(SQLite crawl result sink), ADR-031 (CLI sink selection), and ADR-032
-(bounded redirect following) are Accepted and implemented. ADR-016
+(SQLite crawl result sink), ADR-031 (CLI sink selection), ADR-032
+(bounded redirect following), and ADR-033 (per-host politeness delay) are
+Accepted and implemented. ADR-016
 (logging-redaction scope) and ADR-019 (future execution families) remain
 Proposed. ADR-018 (error-root taxonomy) remains Deferred. ADR-017
 (metadata portability) also remains Deferred: ADR-024, ADR-025, ADR-026,
@@ -422,15 +428,17 @@ parser families"/"custom parser or adapter behavior" review triggers
 with an optional persistence port, two concrete sinks, and two closed,
 statically-dispatched additional parser families, but none resolves
 plugin, queue, or worker portability, so the status is unchanged;
-ADR-028, ADR-029, ADR-031, and ADR-032 similarly stay inside the
+ADR-028, ADR-029, ADR-031, ADR-032, and ADR-033 similarly stay inside the
 existing synchronous architecture without meeting that trigger. Current
-totals are 25 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
+totals are 26 Accepted, 2 Proposed, 2 Deferred, and 0 Superseded.
 
 Async execution, browser automation, dynamic plugins, distributed
 crawling, workers, queues, metrics, tracing, credentialed/authenticated
 outbound requests, non-HTML content acquisition, thread-safety
-guarantees, rate limiting or politeness delay between requests, and live
-profile reload remain unimplemented or conditional future work. Redirect
+guarantees, and live profile reload remain unimplemented or conditional
+future work. A per-host politeness delay between requests now exists
+(ADR-033); `Crawl-delay` and `Retry-After` handling, circuit breaking, and
+a runtime-adjustable interval do not. Redirect
 following now exists, bounded and robots-rechecked (ADR-032); per-hop
 domain revalidation during a redirect chase does not (see ADR-032's own
 accepted residual risk). In-process, single-machine
@@ -1365,6 +1373,8 @@ The standards defined in this document are designed to scale with the AA Crawler
 | Sprint 16 | CLI sink selection completed: ADR-031 accepted, `--sink {file,sqlite}` added to `cli/__init__.py`, resolved once and threaded through all four crawl entry functions as an injectable `sink_factory` defaulting to `FileCrawlResultSink` (every existing invocation's behavior unchanged when `--sink` is omitted), real-pipeline integration verification complete (including a real `sqlite3` database produced through the CLI), documentation aligned |
 | Sprint 17 | Third production source activation completed: Detik (`news.detik.com` only) enabled as a project-governance decision under ADR-020's ordinary-onboarding pre-authorization (no new ADR), per-profile and composition test coverage added mirroring CNN/Kompas, `jsonld_article` compatibility assumed but not live-verified, integration verification complete, documentation aligned |
 | Sprint 18 | CI security scanning completed: ruff's `"S"` rule category enabled (zero new dependency, zero new CI step, `src/` zero findings, `tests/**` per-file-ignores for expected false positives), `pip-audit` added as a new CI-only step auditing the locked dependency set (no known vulnerabilities), no new ADR (dev-tooling only, mirroring Sprint 12), real GitHub Actions verification complete, documentation aligned |
+| Sprint 19 | Redirect architecture completed: ADR-032 accepted, `HtmlFetcher` follows up to 5 redirect hops with robots.txt re-checked at every hop, `TooManyRedirectsError` added, `final_url` reflects a real landing page, real GitHub Actions verification complete, documentation aligned |
+| Sprint 20 | Per-host politeness delay implemented: ADR-033 accepted, `RateLimitPolicy` enforced inside `HttpClient.send()` (2.0 s per exact hostname in the production runtime, disabled by default for direct construction), unplanned dependency-vulnerability fix and URL query-string preservation fix delivered as separate PRs, documentation aligned |
 
 ### 15.3 ADR Triggers
 
