@@ -133,9 +133,21 @@ CI-pipeline precedent.
   reflects the real landing page, letting `ArticleCrawlService`'s
   existing source-boundary check apply to a genuine transport-produced
   value for the first time
+- A per-host politeness delay (ADR-033): `HttpClient` enforces a minimum
+  interval between requests to the same exact hostname, measured from the
+  end of the previous request to the start of the next. Every real
+  request — pages, `robots.txt`, redirect hops, and retries — passes
+  through it. The production runtime uses 2.0 seconds; directly
+  constructed `HttpClient` instances default to no delay. With retry
+  backoff the total wait is the longer of the two, not their sum.
 
 ## Current limitations
 
+- The politeness delay (ADR-033) is a fixed 2.0 seconds per exact hostname:
+  subdomains are limited independently, a site's `Crawl-delay` directive
+  and `Retry-After` header are not honored, there is no circuit breaker,
+  and the interval is not configurable at runtime. Real publisher values
+  are unknown until the authorized live crawl (Sprint 22).
 - Redirect following (ADR-032) is bounded at 5 hops and re-validates
   robots.txt at every hop, but only the terminal landing page's host is
   checked against the requested URL's source profile — an intermediate
@@ -242,7 +254,8 @@ identity, or parser family.
 
 `create_application_runtime()` builds an independent synchronous
 `ApplicationRuntime` containing the runtime-local `RequestIdentity`,
-`TimeoutPolicy`, `RetryPolicy`, `HttpClient`, `RobotsPolicy`, `HtmlFetcher`,
+`TimeoutPolicy`, `RetryPolicy`, `RateLimitPolicy`, `HttpClient`,
+`RobotsPolicy`, `HtmlFetcher`,
 `SourceRegistry`, `ParserComposer`, and `ArticleCrawlService`. The service
 coordinates the use case; each lower-level component retains its own policy.
 
@@ -754,7 +767,7 @@ invocations.
 | **Sprint 17** | Third production source activation (Detik enabled) | **Completed** |
 | **Sprint 18** | CI security scanning (ruff `"S"`, `pip-audit`) | **Completed** |
 | **Sprint 19** | Redirect architecture (ADR-032) | **Completed** |
-| **Sprint 20** | Rate limiting / politeness delay | Planned |
+| **Sprint 20** | Rate limiting / politeness delay (ADR-033) | In progress (implemented, closure pending) |
 | **Sprint 21** | Health/liveness signaling | Planned |
 | **Sprint 22** | Authorized live crawl smoke test + scheduled CI vulnerability re-scanning | Planned |
 
@@ -780,7 +793,8 @@ and two concrete gaps could block a first real run:
   requests back-to-back as fast as the network allows, a real risk of
   being IP-blocked by a real site. `docs/adr/0015-retry-idempotency.md`
   explicitly lists rate limiting and circuit breaking as unaddressed,
-  not merely low priority.
+  not merely low priority. *Closed by Sprint 20 (ADR-033) for every
+  request sent through `HttpClient`, including batch mode's per-URL loop.*
 - **No live crawl against a real site has ever been authorized or
   run.** Per `docs/adr/0020-declarative-source-architecture.md`,
   enabling a source in code "does not replace robots.txt compliance,

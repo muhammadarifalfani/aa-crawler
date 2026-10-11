@@ -10,13 +10,17 @@ from typing import TYPE_CHECKING, Self
 from aa_crawler.application.service import ArticleCrawlService
 from aa_crawler.composition import ParserComposer
 from aa_crawler.html import HtmlFetcher
-from aa_crawler.http import HttpClient, RetryPolicy, TimeoutPolicy
+from aa_crawler.http import HttpClient, RateLimitPolicy, RetryPolicy, TimeoutPolicy
 from aa_crawler.identity import RequestIdentity
 from aa_crawler.robots import RobotsPolicy
 from aa_crawler.sources import DEFAULT_SOURCE_PROFILES, SourceRegistry
 
 if TYPE_CHECKING:
     from types import TracebackType
+
+# Production politeness default (ADR-033): minimum seconds between requests
+# to the same host.
+_POLITENESS_INTERVAL_SECONDS = 2.0
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -55,6 +59,9 @@ def create_application_runtime() -> ApplicationRuntime:
     identity = RequestIdentity(product_version=product_version)
     timeout_policy = TimeoutPolicy()
     retry_policy = RetryPolicy()
+    rate_limit_policy = RateLimitPolicy(
+        min_interval_seconds=_POLITENESS_INTERVAL_SECONDS
+    )
     source_registry = SourceRegistry(DEFAULT_SOURCE_PROFILES)
     parser_composer = ParserComposer()
 
@@ -63,6 +70,7 @@ def create_application_runtime() -> ApplicationRuntime:
             HttpClient(
                 timeout_policy=timeout_policy,
                 retry_policy=retry_policy,
+                rate_limit_policy=rate_limit_policy,
             )
         )
         robots_policy = RobotsPolicy(

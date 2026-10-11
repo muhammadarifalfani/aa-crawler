@@ -32,7 +32,7 @@ import aa_crawler.cli.app as cli_app_module
 from aa_crawler import main
 from aa_crawler.composition import ParserComposer
 from aa_crawler.html import HtmlDocument
-from aa_crawler.http import HttpClient, RetryPolicy, TimeoutPolicy
+from aa_crawler.http import HttpClient, RateLimitPolicy, RetryPolicy, TimeoutPolicy
 from aa_crawler.observability import get_correlation_id
 from aa_crawler.sources import CNN_INDONESIA_PROFILE, SourceProfile
 
@@ -99,8 +99,13 @@ class NetworkGuardHttpClient(HttpClient):
         *,
         timeout_policy: TimeoutPolicy,
         retry_policy: RetryPolicy,
+        rate_limit_policy: RateLimitPolicy,
     ) -> None:
-        super().__init__(timeout_policy=timeout_policy, retry_policy=retry_policy)
+        super().__init__(
+            timeout_policy=timeout_policy,
+            retry_policy=retry_policy,
+            rate_limit_policy=rate_limit_policy,
+        )
         self.send_count = 0
         self.close_count = 0
 
@@ -192,10 +197,12 @@ def _install_network_guard(monkeypatch: MonkeyPatch) -> list[NetworkGuardHttpCli
         *,
         timeout_policy: TimeoutPolicy,
         retry_policy: RetryPolicy,
+        rate_limit_policy: RateLimitPolicy,
     ) -> NetworkGuardHttpClient:
         client = NetworkGuardHttpClient(
             timeout_policy=timeout_policy,
             retry_policy=retry_policy,
+            rate_limit_policy=rate_limit_policy,
         )
         clients.append(client)
         return client

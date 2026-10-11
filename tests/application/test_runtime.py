@@ -14,7 +14,7 @@ from aa_crawler.application import (
     create_application_runtime,
 )
 from aa_crawler.composition import ParserComposer
-from aa_crawler.http import RetryPolicy, TimeoutPolicy
+from aa_crawler.http import RateLimitPolicy, RetryPolicy, TimeoutPolicy
 from aa_crawler.identity import RequestIdentity
 from aa_crawler.sources import SourceRegistry
 
@@ -34,9 +34,11 @@ class RecordingHttpClient:
         *,
         timeout_policy: TimeoutPolicy,
         retry_policy: RetryPolicy,
+        rate_limit_policy: RateLimitPolicy,
     ) -> None:
         self.timeout_policy = timeout_policy
         self.retry_policy = retry_policy
+        self.rate_limit_policy = rate_limit_policy
         self.enter_count = 0
         self.close_count = 0
 
@@ -97,6 +99,7 @@ class CompositionRecorder:
         self.identities: list[RequestIdentity] = []
         self.timeout_policies: list[TimeoutPolicy] = []
         self.retry_policies: list[RetryPolicy] = []
+        self.rate_limit_policies: list[RateLimitPolicy] = []
         self.registries: list[SourceRegistry] = []
         self.composers: list[ParserComposer] = []
         self.clients: list[RecordingHttpClient] = []
@@ -127,6 +130,16 @@ class CompositionRecorder:
         self.retry_policies.append(policy)
         return policy
 
+    def create_rate_limit_policy(
+        self,
+        *,
+        min_interval_seconds: float,
+    ) -> RateLimitPolicy:
+        self.events.append("rate_limit")
+        policy = RateLimitPolicy(min_interval_seconds=min_interval_seconds)
+        self.rate_limit_policies.append(policy)
+        return policy
+
     def create_registry(self, profiles: object) -> SourceRegistry:
         self.events.append("registry")
         assert profiles is runtime_module.DEFAULT_SOURCE_PROFILES
@@ -145,11 +158,13 @@ class CompositionRecorder:
         *,
         timeout_policy: TimeoutPolicy,
         retry_policy: RetryPolicy,
+        rate_limit_policy: RateLimitPolicy,
     ) -> RecordingHttpClient:
         self.events.append("client")
         client = RecordingHttpClient(
             timeout_policy=timeout_policy,
             retry_policy=retry_policy,
+            rate_limit_policy=rate_limit_policy,
         )
         self.clients.append(client)
         return client
@@ -209,6 +224,11 @@ class CompositionRecorder:
             self.create_timeout_policy,
         )
         monkeypatch.setattr(runtime_module, "RetryPolicy", self.create_retry_policy)
+        monkeypatch.setattr(
+            runtime_module,
+            "RateLimitPolicy",
+            self.create_rate_limit_policy,
+        )
         monkeypatch.setattr(runtime_module, "SourceRegistry", self.create_registry)
         monkeypatch.setattr(runtime_module, "ParserComposer", self.create_composer)
         monkeypatch.setattr(runtime_module, "HttpClient", self.create_client)
@@ -236,10 +256,12 @@ def _install_acquisition_doubles(
         *,
         timeout_policy: TimeoutPolicy,
         retry_policy: RetryPolicy,
+        rate_limit_policy: RateLimitPolicy,
     ) -> RecordingHttpClient:
         client = RecordingHttpClient(
             timeout_policy=timeout_policy,
             retry_policy=retry_policy,
+            rate_limit_policy=rate_limit_policy,
         )
         clients.append(client)
         return client
@@ -323,6 +345,7 @@ def test_factory_composes_explicit_graph_in_required_order(
         "identity",
         "timeout",
         "retry",
+        "rate_limit",
         "registry",
         "composer",
         "client",
@@ -337,6 +360,8 @@ def test_factory_composes_explicit_graph_in_required_order(
     assert recorder.fetchers[0].robots_policy is recorder.robots_policies[0]
     assert recorder.clients[0].timeout_policy is recorder.timeout_policies[0]
     assert recorder.clients[0].retry_policy is recorder.retry_policies[0]
+    assert recorder.clients[0].rate_limit_policy is recorder.rate_limit_policies[0]
+    assert recorder.rate_limit_policies[0].min_interval_seconds == 2.0
     assert recorder.robots_policies[0].http_client is recorder.clients[0]
     assert recorder.fetchers[0].http_client is recorder.clients[0]
     assert recorder.services[0].source_registry is recorder.registries[0]

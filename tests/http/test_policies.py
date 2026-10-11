@@ -2,7 +2,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from aa_crawler.http import RetryPolicy, TimeoutPolicy
+from aa_crawler.http import RateLimitPolicy, RetryPolicy, TimeoutPolicy
 
 
 def test_timeout_policy_defaults_and_conversion() -> None:
@@ -126,3 +126,31 @@ def test_retry_policy_is_frozen() -> None:
 
     with pytest.raises(FrozenInstanceError):
         policy.max_attempts = 4  # type: ignore[misc]
+
+
+def test_rate_limit_policy_defaults_to_disabled() -> None:
+    assert RateLimitPolicy().min_interval_seconds == 0.0
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(0, 0.0), (2, 2.0), (0.5, 0.5)],
+)
+def test_rate_limit_policy_accepts_non_negative_numbers(
+    value: float,
+    expected: float,
+) -> None:
+    assert RateLimitPolicy(min_interval_seconds=value).min_interval_seconds == expected
+
+
+@pytest.mark.parametrize("value", [-1, -0.1, True, "2", None])
+def test_rate_limit_policy_rejects_invalid_values(value: object) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        RateLimitPolicy(min_interval_seconds=value)  # type: ignore[arg-type]
+
+
+def test_rate_limit_policy_is_frozen() -> None:
+    policy = RateLimitPolicy(min_interval_seconds=2.0)
+
+    with pytest.raises(FrozenInstanceError):
+        policy.min_interval_seconds = 1.0  # type: ignore[misc]

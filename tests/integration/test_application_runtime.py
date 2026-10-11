@@ -18,7 +18,7 @@ from aa_crawler.application import (
 from aa_crawler.composition import ParserComposer
 from aa_crawler.configuration import ApplicationSettings
 from aa_crawler.html import HtmlFetcher
-from aa_crawler.http import HttpClient, RetryPolicy, TimeoutPolicy
+from aa_crawler.http import HttpClient, RateLimitPolicy, RetryPolicy, TimeoutPolicy
 from aa_crawler.identity import RequestIdentity
 from aa_crawler.robots import RobotsPolicy
 from aa_crawler.sources import DEFAULT_SOURCE_PROFILES, SourceRegistry
@@ -56,10 +56,12 @@ class NetworkGuardHttpClient(HttpClient):
         *,
         timeout_policy: TimeoutPolicy,
         retry_policy: RetryPolicy,
+        rate_limit_policy: RateLimitPolicy,
     ) -> None:
         super().__init__(
             timeout_policy=timeout_policy,
             retry_policy=retry_policy,
+            rate_limit_policy=rate_limit_policy,
         )
         self.close_count = 0
         self.send_count = 0
@@ -134,11 +136,13 @@ class RuntimeGraphRecorder:
         *,
         timeout_policy: TimeoutPolicy,
         retry_policy: RetryPolicy,
+        rate_limit_policy: RateLimitPolicy,
     ) -> NetworkGuardHttpClient:
         self.events.append("client")
         client = NetworkGuardHttpClient(
             timeout_policy=timeout_policy,
             retry_policy=retry_policy,
+            rate_limit_policy=rate_limit_policy,
         )
         self.clients.append(client)
         return client

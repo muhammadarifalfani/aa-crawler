@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from aa_crawler.crawler import CrawlerRequest, RequestError, ResponseError
-from aa_crawler.http import HttpClient, RetryPolicy, TimeoutPolicy
+from aa_crawler.http import HttpClient, RateLimitPolicy, RetryPolicy, TimeoutPolicy
 from aa_crawler.http import client as client_module
 
 
@@ -436,3 +436,184 @@ def test_non_eligible_method_does_not_retry_transient_exception(
     assert attempts == 1
     assert delays == []
     assert isinstance(error_info.value.__cause__, error_type)
+
+
+class _FakeClock:
+    """Deterministic clock whose sleeps advance time instead of waiting."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _ok_handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, content=b"ok", request=request)
+
+
+def _polite_client(
+    clock: _FakeClock,
+    handler: object = _ok_handler,
+    *,
+    interval: float = 2.0,
+    retry_policy: RetryPolicy | None = None,
+) -> HttpClient:
+    return HttpClient(
+        rate_limit_policy=RateLimitPolicy(min_interval_seconds=interval),
+        retry_policy=retry_policy,
+        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+        clock=clock,
+    )
+
+
+def test_first_request_to_a_host_is_not_delayed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+
+    with _polite_client(clock) as client:
+        client.send(CrawlerRequest(url="https://example.test/one"))
+
+    assert clock.sleeps == []
+
+
+def test_second_request_to_same_host_waits_for_remaining_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+
+    with _polite_client(clock) as client:
+        client.send(CrawlerRequest(url="https://example.test/one"))
+        clock.now = 0.5
+        client.send(CrawlerRequest(url="https://example.test/two"))
+
+    assert clock.sleeps == [1.5]
+    assert clock.now == 2.0
+
+
+@pytest.mark.parametrize("elapsed", [2.0, 5.0])
+def test_no_wait_once_the_interval_has_elapsed(
+    monkeypatch: pytest.MonkeyPatch,
+    elapsed: float,
+) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+
+    with _polite_client(clock) as client:
+        client.send(CrawlerRequest(url="https://example.test/one"))
+        clock.now = elapsed
+        client.send(CrawlerRequest(url="https://example.test/two"))
+
+    assert clock.sleeps == []
+
+
+def test_hosts_are_limited_independently(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+
+    with _polite_client(clock) as client:
+        client.send(CrawlerRequest(url="https://a.example.test/one"))
+        client.send(CrawlerRequest(url="https://b.example.test/one"))
+        assert clock.sleeps == []
+
+        client.send(CrawlerRequest(url="https://A.example.test/two"))
+
+    assert clock.sleeps == [2.0]
+
+
+def test_failed_attempt_still_counts_as_contacting_the_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, request=request)
+
+    with _polite_client(
+        clock,
+        handler,
+        retry_policy=RetryPolicy(max_attempts=1),
+    ) as client:
+        with pytest.raises(RequestError):
+            client.send(CrawlerRequest(url="https://example.test/one"))
+        clock.now = 0.5
+        client.send(CrawlerRequest(url="https://example.test/two"))
+
+    assert clock.sleeps == [1.5]
+
+
+def test_retry_waits_only_for_the_remainder_after_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+    statuses = iter([503, 200])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(next(statuses), request=request)
+
+    with _polite_client(clock, handler) as client:
+        response = client.send(CrawlerRequest(url="https://example.test/one"))
+
+    assert response.status_code == 200
+    assert clock.sleeps == [0.5, 1.5]
+    assert clock.now == 2.0
+
+
+@pytest.mark.parametrize("policy", [None, RateLimitPolicy(min_interval_seconds=0)])
+def test_disabled_rate_limit_never_waits(
+    monkeypatch: pytest.MonkeyPatch,
+    policy: RateLimitPolicy | None,
+) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+
+    with HttpClient(
+        rate_limit_policy=policy,
+        transport=httpx.MockTransport(_ok_handler),
+        clock=clock,
+    ) as client:
+        client.send(CrawlerRequest(url="https://example.test/one"))
+        client.send(CrawlerRequest(url="https://example.test/two"))
+
+    assert clock.sleeps == []
+
+
+def test_request_without_a_host_is_not_limited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _FakeClock()
+    monkeypatch.setattr(client_module, "_sleep", clock.sleep)
+
+    with _polite_client(clock) as client:
+        client.send(CrawlerRequest(url="unsupported:///one"))
+        client.send(CrawlerRequest(url="unsupported:///two"))
+
+    assert clock.sleeps == []
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://example.test/path", "example.test"),
+        ("HTTPS://Example.TEST:8443/path", "example.test"),
+        ("/relative", None),
+        ("http://[bad", None),
+    ],
+)
+def test_host_extraction(url: str, expected: str | None) -> None:
+    assert client_module._host_of(url) == expected
